@@ -44,8 +44,7 @@ Point a DNS A record at the server, then on the server:
 ```bash
 git clone https://github.com/meitswami/decart-clone.git /tmp/decart-clone
 sudo bash /tmp/decart-clone/deploy/setup.sh --email you@example.com
-sudo nano /etc/live-virtual-try-on.env   # paste DECART_API_KEY
-sudo systemctl restart live-virtual-try-on
+sudo bash /opt/live-virtual-try-on/deploy/set-key.sh   # paste your Decart key (stays hidden)
 ```
 
 `setup.sh` installs Node.js 22 (only if Node is missing), nginx and certbot if needed. It never upgrades packages already on the server, puts the app in
