@@ -26,7 +26,7 @@ public SDK and docs.
 
 ## Run locally
 
-Needs Node.js 22+.
+Needs Node.js 20+.
 
 ```bash
 npm install
@@ -48,9 +48,9 @@ sudo nano /etc/live-virtual-try-on.env   # paste DECART_API_KEY
 sudo systemctl restart live-virtual-try-on
 ```
 
-`setup.sh` installs Node.js 22, nginx and certbot if needed, puts the app in
+`setup.sh` installs Node.js 22 (only if Node is missing), nginx and certbot if needed. It never upgrades packages already on the server, puts the app in
 `/opt/live-virtual-try-on`, runs it as a locked-down `systemd` service on
-127.0.0.1:3000, adds an nginx site, and gets a free HTTPS certificate (browsers
+127.0.0.1:3070 (`--port` to change), adds an nginx site, and gets a free HTTPS certificate (browsers
 only allow camera access over HTTPS). It refuses to touch ports 80/443 if
 something other than nginx owns them. Run it again to update to the latest code.
 
