@@ -1,0 +1,27 @@
+[Unit]
+Description=Live Virtual Try-On (Node.js)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tryon
+Group=tryon
+WorkingDirectory=/opt/live-virtual-try-on
+EnvironmentFile=/etc/live-virtual-try-on.env
+ExecStart=/usr/bin/env node server.mjs
+Restart=always
+RestartSec=3
+
+# Hardening: the app only needs to read its own files and talk to the network.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

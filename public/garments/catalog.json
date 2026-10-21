@@ -1,0 +1,12 @@
+[
+  { "id": "hoodie", "name": "Navy Hoodie", "image": "/garments/hoodie.jpg", "prompt": "Substitute the current top with a navy blue hoodie with a white cross logo on the chest and a kangaroo pocket" },
+  { "id": "bomber", "name": "Black Bomber", "image": "/garments/bomber.jpg", "prompt": "Substitute the current top with a black bomber jacket with a blue cross logo on the chest and a zip front" },
+  { "id": "rainjacket", "name": "Yellow Rain Jacket", "image": "/garments/rainjacket.jpg", "prompt": "Substitute the current top with a yellow hooded rain jacket with a grey cross logo on the chest and zip front" },
+  { "id": "blazer", "name": "Navy Blazer", "image": "/garments/blazer.jpg", "prompt": "Substitute the current top with a navy blue blazer with a white cross logo on the chest, worn over a light blue dress shirt and navy tie" },
+  { "id": "crewneck", "name": "Grey Crewneck", "image": "/garments/crewneck.jpg", "prompt": "Substitute the current top with a grey crewneck sweatshirt with a large blue cross logo and \"DECART\" text on the front" },
+  { "id": "zipup", "name": "Black Zip-Up", "image": "/garments/zipup.jpg", "prompt": "Substitute the current top with a black zip-up hoodie with a blue cross logo on the chest" },
+  { "id": "polo", "name": "Navy Polo", "image": "/garments/polo.jpg", "prompt": "Substitute the current top with a navy blue polo shirt with a white cross logo on the chest" },
+  { "id": "tshirt", "name": "Navy T-Shirt", "image": "/garments/tshirt.jpg", "prompt": "Substitute the current top with a navy blue t-shirt with a white cross logo on the chest" },
+  { "id": "beanie", "name": "Knit Beanie", "image": "/garments/beanie.jpg", "prompt": "Substitute the current headwear with a navy blue knit beanie with a white cross logo on the fold" },
+  { "id": "cap", "name": "Black Cap", "image": "/garments/cap.jpg", "prompt": "Substitute the current headwear with a black baseball cap with a blue cross logo and \"DECART\" text" }
+]

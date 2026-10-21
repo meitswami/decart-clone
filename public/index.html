@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Live Virtual Try-On</title>
+  <meta name="description" content="Try clothes on live with your webcam." />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231b1a19'/%3E%3Cpath d='M11 8l-5 4 2.5 3.5L11 14v11h10V14l2.5 1.5L26 12l-5-4h-2.5a2.5 2.5 0 01-5 0z' fill='%23fff'/%3E%3C/svg%3E" />
+  <style>
+    :root {
+      --bg: #f6f5f3;
+      --panel: #ffffff;
+      --text: #1b1a19;
+      --muted: #6b6762;
+      --line: #e3e0dc;
+      --soft: #efece8;
+      --accent: #1b1a19;
+      --accent-text: #ffffff;
+      --ok: #1f7a4d;
+      --error: #b3261e;
+      --stage: #111;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #141413;
+        --panel: #1d1c1b;
+        --text: #f1efec;
+        --muted: #a29d97;
+        --line: #33312e;
+        --soft: #262523;
+        --accent: #f1efec;
+        --accent-text: #141413;
+        --ok: #5cc28f;
+        --error: #ff8a80;
+        --stage: #000;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    header, main, footer { max-width: 1240px; margin: 0 auto; }
+    header { padding: 20px 24px 0; }
+    h1 { margin: 0; font-size: 21px; font-weight: 680; letter-spacing: -0.015em; }
+    header p { margin: 2px 0 0; color: var(--muted); font-size: 14px; }
+    main {
+      padding: 16px 24px 24px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 340px;
+      gap: 20px;
+      align-items: start;
+    }
+    footer { padding: 0 24px 28px; color: var(--muted); font-size: 12px; }
+    footer a { color: inherit; }
+    @media (max-width: 900px) {
+      main { grid-template-columns: 1fr; padding: 12px 16px 20px; }
+      header { padding: 16px 16px 0; }
+      footer { padding: 0 16px 24px; }
+    }
+
+    /* Video stage: camera fills it until the try-on arrives, then shrinks to a corner. */
+    #stage {
+      position: relative;
+      aspect-ratio: 16 / 9;
+      background: var(--stage);
+      border-radius: 14px;
+      overflow: hidden;
+    }
+    @media (max-width: 600px) { #stage { aspect-ratio: 4 / 5; } }
+    #stage video { position: absolute; object-fit: cover; background: #000; }
+    #camera { inset: 0; width: 100%; height: 100%; transform: scaleX(-1); }
+    #output { inset: 0; width: 100%; height: 100%; opacity: 0; transition: opacity .3s; }
+    #stage.streaming #output { opacity: 1; }
+    #stage.streaming #camera {
+      inset: auto 12px 12px auto;
+      width: 22%; height: auto; aspect-ratio: 16 / 9;
+      border-radius: 8px; border: 2px solid rgba(255,255,255,.75);
+      z-index: 2;
+    }
+    #placeholder {
+      position: absolute; inset: 0;
+      display: grid; place-items: center; align-content: center; gap: 6px;
+      color: #a8a39d; font-size: 14px; text-align: center; padding: 20px;
+    }
+    #placeholder strong { color: #e9e6e2; font-size: 16px; font-weight: 600; }
+    #stage .tag {
+      position: absolute; left: 12px; top: 12px; z-index: 3;
+      background: rgba(0,0,0,.55); color: #fff; font-size: 12px;
+      padding: 3px 9px; border-radius: 99px; display: none;
+    }
+    #stage .tag::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #ff4d4d; margin-right: 6px; vertical-align: 1px; }
+    #stage.streaming .tag { display: block; }
+
+    aside {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 16px;
+      display: grid;
+      gap: 16px;
+    }
+    .label { font-size: 12px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px; }
+
+    #catalog { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+    #catalog button {
+      padding: 0; border: 1.5px solid var(--line); border-radius: 9px; overflow: hidden;
+      background: #fff; cursor: pointer; display: grid; position: relative;
+    }
+    #catalog img { width: 100%; aspect-ratio: 1; object-fit: contain; display: block; }
+    #catalog span {
+      position: absolute; inset: auto 0 0 0; font-size: 10px; line-height: 1.25; padding: 2px 3px;
+      background: rgba(255,255,255,.88); color: #1b1a19; opacity: 0; transition: opacity .15s;
+    }
+    #catalog button:hover span, #catalog button:focus-visible span, #catalog button[aria-pressed=true] span { opacity: 1; }
+    #catalog button[aria-pressed=true] { border-color: var(--text); box-shadow: 0 0 0 1.5px var(--text); }
+    #catalog button:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+
+    #drop {
+      border: 1.5px dashed var(--line);
+      border-radius: 10px;
+      min-height: 92px;
+      display: flex; align-items: center; gap: 12px;
+      cursor: pointer; padding: 10px 12px; color: var(--muted); font-size: 13px;
+      transition: border-color .15s, background .15s;
+    }
+    #drop:hover, #drop:focus-visible, #drop.dragging, #drop.selected { border-color: var(--text); outline: none; }
+    #drop.dragging { background: var(--soft); }
+    #drop.selected { border-style: solid; }
+    #drop-img { width: 70px; height: 70px; object-fit: contain; border-radius: 6px; background: #fff; display: none; flex: none; }
+    #drop.has-image #drop-img { display: block; }
+
+    .stack { display: grid; gap: 8px; }
+    #url-form { display: flex; gap: 6px; }
+    input[type=url], input[type=text], input[type=password] {
+      flex: 1; min-width: 0; width: 100%;
+      font: inherit; font-size: 14px; color: var(--text);
+      background: var(--bg); border: 1px solid var(--line);
+      border-radius: 8px; padding: 8px 10px;
+    }
+    input:focus-visible { outline: 2px solid var(--text); outline-offset: 0; }
+    button.btn {
+      font: inherit; font-size: 14px; font-weight: 600;
+      border-radius: 8px; padding: 9px 14px; cursor: pointer;
+      border: 1px solid var(--line); background: var(--bg); color: var(--text);
+    }
+    button.btn:disabled { opacity: .45; cursor: default; }
+    .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    #start { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+    #status { font-size: 13px; min-height: 2.6em; margin: 0; }
+    #status[data-tone=ok] { color: var(--ok); }
+    #status[data-tone=error] { color: var(--error); }
+    #timer { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; min-height: 1.5em; }
+    .note { font-size: 12px; color: var(--muted); margin: 0; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Live Virtual Try-On</h1>
+    <p>See clothes on yourself, live, with your webcam.</p>
+  </header>
+
+  <main>
+    <section id="stage" aria-label="Video">
+      <video id="output" autoplay playsinline></video>
+      <video id="camera" autoplay playsinline muted></video>
+      <div id="placeholder">
+        <strong>Pick a garment and press Start</strong>
+        <span>Stand back so your upper body is in frame.</span>
+      </div>
+      <span class="tag">Live</span>
+    </section>
+
+    <aside>
+      <div>
+        <div class="label">Pick a garment</div>
+        <div id="catalog" role="group" aria-label="Sample garments"></div>
+      </div>
+
+      <div class="stack">
+        <div class="label" style="margin-bottom:0">Or use your own</div>
+        <div id="drop" tabindex="0" role="button" aria-label="Upload a garment photo">
+          <img id="drop-img" alt="Your garment" />
+          <span>Drop a product photo here, click to upload, or paste an image.</span>
+        </div>
+        <input id="file-input" type="file" accept="image/*" hidden />
+        <form id="url-form">
+          <input id="url-input" type="url" placeholder="…or paste an image link" aria-label="Garment image link" />
+          <button class="btn" type="submit">Use</button>
+        </form>
+        <input id="desc" type="text" maxlength="160" placeholder="Describe it (optional): red plaid flannel shirt" aria-label="Describe your garment" />
+      </div>
+
+      <div id="code-row" hidden>
+        <div class="label">Access code</div>
+        <input id="code" type="password" autocomplete="off" aria-label="Access code" />
+      </div>
+
+      <div class="actions">
+        <button class="btn" id="start" type="button">Start</button>
+        <button class="btn" id="stop" type="button" disabled>Stop</button>
+      </div>
+
+      <div>
+        <p id="status" role="status"></p>
+        <div id="timer"></div>
+      </div>
+
+      <p class="note">Your camera video is streamed to Decart's AI to create the try-on. This site doesn't store it.</p>
+    </aside>
+  </main>
+
+  <footer>
+    Powered by Decart's realtime Lucy VTON model. Sample garments from
+    <a href="https://github.com/DecartAI/tryon-examples" target="_blank" rel="noopener">DecartAI/tryon-examples</a> (MIT).
+  </footer>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
