@@ -148,7 +148,41 @@
     }
     button.btn:disabled { opacity: .45; cursor: default; }
     .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-    #start { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+    .actions[hidden] { display: none; }
+    .btn.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+    a.btn { text-align: center; text-decoration: none; }
+    .btn.wide { grid-column: 1 / -1; }
+    a.btn[hidden] { display: none; }
+    select {
+      width: 100%; font: inherit; font-size: 14px; color: var(--text);
+      background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px;
+    }
+    select[hidden] { display: none; }
+
+    .modes { display: grid; grid-template-columns: 1fr 1fr; background: var(--soft); border-radius: 10px; padding: 3px; gap: 3px; }
+    .modes button {
+      font: inherit; font-size: 14px; font-weight: 600; color: var(--muted);
+      border: 0; border-radius: 8px; padding: 7px 10px; background: transparent; cursor: pointer;
+    }
+    .modes button[aria-pressed=true] { background: var(--panel); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+    .modes small { font-size: 11px; font-weight: 650; color: var(--ok); text-transform: uppercase; letter-spacing: .04em; margin-left: 2px; }
+    .modes button.nudge { animation: nudge 1.2s ease-in-out 3; }
+    @keyframes nudge { 50% { box-shadow: 0 0 0 3px var(--ok); } }
+    #catalog button:disabled { opacity: .3; cursor: not-allowed; }
+
+    #photo-view { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; z-index: 4; }
+    #photo-view[hidden], #countdown[hidden], #working[hidden] { display: none; }
+    #countdown {
+      position: absolute; inset: 0; z-index: 5; display: grid; place-items: center;
+      font-size: 96px; font-weight: 700; color: #fff; text-shadow: 0 2px 16px rgba(0,0,0,.6);
+    }
+    #working {
+      position: absolute; inset: auto 0 0 0; z-index: 6; display: flex; align-items: center; gap: 10px;
+      padding: 12px 14px; color: #fff; font-size: 14px; background: linear-gradient(transparent, rgba(0,0,0,.75));
+    }
+    .spinner { width: 18px; height: 18px; border-radius: 50%; border: 2.5px solid rgba(255,255,255,.35); border-top-color: #fff; animation: spin .8s linear infinite; flex: none; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) { .spinner, .modes button.nudge { animation: none; } }
     #status { font-size: 13px; min-height: 2.6em; margin: 0; }
     #status[data-tone=ok] { color: var(--ok); }
     #status[data-tone=error] { color: var(--error); }
@@ -167,13 +201,21 @@
       <video id="output" autoplay playsinline></video>
       <video id="camera" autoplay playsinline muted></video>
       <div id="placeholder">
-        <strong>Pick a garment and press Start</strong>
+        <strong id="placeholder-title">Pick a garment and press Start</strong>
         <span>Stand back so your upper body is in frame.</span>
       </div>
+      <img id="photo-view" alt="Your try-on photo" hidden />
+      <div id="countdown" hidden></div>
+      <div id="working" hidden><span class="spinner"></span><span id="working-text">Creating your try-on…</span></div>
       <span class="tag">Live</span>
     </section>
 
     <aside>
+      <div class="modes" role="group" aria-label="Try-on mode">
+        <button type="button" id="mode-live" aria-pressed="true">Live video</button>
+        <button type="button" id="mode-photo" aria-pressed="false">Photo <small>free</small></button>
+      </div>
+
       <div>
         <div class="label">Pick a garment</div>
         <div id="catalog" role="group" aria-label="Sample garments"></div>
@@ -191,6 +233,11 @@
           <button class="btn" type="submit">Use</button>
         </form>
         <input id="desc" type="text" maxlength="160" placeholder="Describe it (optional): red plaid flannel shirt" aria-label="Describe your garment" />
+        <select id="gtype" aria-label="Garment type" hidden>
+          <option value="upper_body">My garment is a top</option>
+          <option value="lower_body">My garment is a bottom (trousers, skirt)</option>
+          <option value="dresses">My garment is a dress</option>
+        </select>
       </div>
 
       <div id="code-row" hidden>
@@ -198,9 +245,16 @@
         <input id="code" type="password" autocomplete="off" aria-label="Access code" />
       </div>
 
-      <div class="actions">
-        <button class="btn" id="start" type="button">Start</button>
+      <div class="actions" id="live-actions">
+        <button class="btn primary" id="start" type="button">Start</button>
         <button class="btn" id="stop" type="button" disabled>Stop</button>
+      </div>
+
+      <div class="actions" id="photo-actions" hidden>
+        <button class="btn primary" id="snap" type="button">Take photo</button>
+        <button class="btn" id="upload-me" type="button">Use a photo of me</button>
+        <input id="me-input" type="file" accept="image/*" hidden />
+        <a class="btn wide" id="download" href="#" download="try-on.webp" hidden>Download result</a>
       </div>
 
       <div>
@@ -208,15 +262,17 @@
         <div id="timer"></div>
       </div>
 
-      <p class="note">Your camera video is streamed to Decart's AI to create the try-on. This site doesn't store it.</p>
+      <p class="note" id="note">Your camera video is streamed to Decart's AI to create the try-on. This site doesn't store it.</p>
     </aside>
   </main>
 
   <footer>
-    Powered by Decart's realtime Lucy VTON model. Sample garments from
+    Live mode: Decart's realtime Lucy VTON model. Free photo mode:
+    <a href="https://github.com/franciszzj/Leffa" target="_blank" rel="noopener">Leffa</a> (MIT) via its Hugging Face demo.
+    Sample garments from
     <a href="https://github.com/DecartAI/tryon-examples" target="_blank" rel="noopener">DecartAI/tryon-examples</a> (MIT).
   </footer>
 
-  <script type="module" src="/app.js"></script>
+  <script type="module" src="/app.js?v=df8ce6412a4c"></script>
 </body>
 </html>

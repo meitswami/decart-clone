@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Live virtual try-on web app using Decart realtime lucy-vton",
   "scripts": {
-    "build": "esbuild src/app.js --bundle --minify --format=esm --target=es2022 --outfile=public/app.js",
+    "build": "node build.mjs",
     "start": "node server.mjs",
     "dev": "npm run build && node server.mjs"
   },
@@ -13,7 +13,8 @@
     "@decartai/sdk": "0.2.12"
   },
   "devDependencies": {
-    "esbuild": "0.25.10"
+    "esbuild": "0.25.10",
+    "@gradio/client": "1.15.1"
   },
   "engines": {
     "node": ">=20"

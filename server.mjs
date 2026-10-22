@@ -298,7 +298,8 @@ async function handleStatic(reqUrl, res) {
     const ext = path.extname(file);
     send(res, 200, {
       "Content-Type": CONTENT_TYPES[ext] || "application/octet-stream",
-      "Cache-Control": ext === ".html" ? "no-cache" : "public, max-age=3600",
+      // app.js is fingerprinted in index.html (?v=hash), so it can be cached; html/json must stay fresh.
+      "Cache-Control": ext === ".html" || ext === ".json" ? "no-cache" : "public, max-age=3600",
     }, body);
   } catch {
     send(res, 404, { "Content-Type": "text/plain" }, "Not found");
