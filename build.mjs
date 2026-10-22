@@ -4,7 +4,7 @@
 
 import { build } from "esbuild";
 import { createHash } from "node:crypto";
-import { readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, readFileSync, writeFileSync } from "node:fs";
 
 const nodeOnlyGradioWrapper = {
   name: "gradio-node-wrapper",
@@ -32,6 +32,11 @@ await build({
   plugins: [nodeOnlyGradioWrapper],
   logLevel: "info",
 });
+
+// The Decart SDK loads this worker from next to the page script (new URL("./frame-metadata-worker.js",
+// import.meta.url)). Without it, live video arrives but can't be decoded and the output stays black.
+copyFileSync("node_modules/@decartai/sdk/dist/realtime/browser/frame-metadata-worker.js", "public/frame-metadata-worker.js");
+console.log("copied frame-metadata-worker.js");
 
 // Stamp the script's fingerprint into index.html, so browsers fetch the new script after each
 // update instead of a cached old one.
