@@ -51,6 +51,7 @@ def _warm() -> None:
             if photo_tryon._available():
                 photo_tryon.load()
                 photo_tryon.load_upscaler()
+                photo_tryon.load_parser()
             if person_analysis.available():
                 person_analysis._load()
         except Exception:

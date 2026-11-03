@@ -90,7 +90,9 @@ async def handle(ws: WebSocket) -> None:
         g_bytes = base64.b64decode(start["garment_b64"][:20_000_000])
         garment = Image.open(io.BytesIO(g_bytes)).convert("RGB")
         dress, engine = _dress_fn(garment, category)
-        dresser = LiveDresser(dress, key_interval=float(settings.live_key_interval))
+        from pipeline import photo_tryon
+        mask_fn = photo_tryon.garment_mask_fn(category) if engine == "fashn" else None
+        dresser = LiveDresser(dress, key_interval=float(settings.live_key_interval), mask_fn=mask_fn)
         if record:
             captures.save_file(trial_id, "garment.jpg", g_bytes)
             captures.update_meta(trial_id, kind="live", category=category, store_id=claims.get("store_id"),

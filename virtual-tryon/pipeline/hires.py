@@ -87,6 +87,46 @@ def change_mask(before: np.ndarray, after: np.ndarray, *, thresh: float = 14.0,
     return cv2.GaussianBlur(filled.astype(np.float32), (f, f), 0).clip(0, 1)
 
 
+# Human-parser labels (fashn-human-parser, 18 classes).
+PARSER_LABELS = {0: "background", 1: "face", 2: "hair", 3: "top", 4: "dress", 5: "skirt", 6: "pants",
+                 7: "belt", 8: "bag", 9: "hat", 10: "scarf", 11: "glasses", 12: "arms", 13: "hands",
+                 14: "legs", 15: "feet", 16: "torso", 17: "jewelry"}
+_IDS = {v: k for k, v in PARSER_LABELS.items()}
+COVERAGE = {"tops": ["top", "dress", "scarf"], "bottoms": ["skirt", "pants", "belt"],
+            "one-pieces": ["top", "dress", "scarf", "skirt", "pants", "belt"]}
+SKIN = {"tops": ["arms", "hands", "torso"], "bottoms": ["legs"], "one-pieces": ["arms", "hands", "torso", "legs"]}
+IDENTITY = ["face", "hair", "hat", "glasses", "jewelry", "bag"]
+
+
+def semantic_mask(before: np.ndarray, after: np.ndarray, category: str,
+                  parse: Callable[[np.ndarray], np.ndarray]) -> np.ndarray:
+    """Garment region from a human parser instead of colour difference alone.
+
+    region = old garment ∪ new garment ∪ (skin that actually changed, e.g. new
+    sleeve length) − identity parts of the original (face, hair, hat...).
+    Colour-difference masks punch holes wherever the new garment matches the old
+    one (white logo letters on a former white tee); this doesn't.
+    """
+    pb, pa = parse(before), parse(after)
+    h, w = before.shape[:2]
+    if pb.shape != (h, w):
+        pb = cv2.resize(pb.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST)
+    if pa.shape != (h, w):
+        pa = cv2.resize(pa.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST)
+    ids = lambda names: [_IDS[n] for n in names]
+    garment = np.isin(pb, ids(COVERAGE[category])) | np.isin(pa, ids(COVERAGE[category]))
+    diff = change_mask(before, after) > 0.5
+    skin = (np.isin(pb, ids(SKIN[category])) | np.isin(pa, ids(SKIN[category]))) & diff
+    m = (garment | skin).astype(np.uint8)
+    ks = max(3, int(min(h, w) * 0.012) | 1)
+    k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (ks, ks))
+    m = cv2.morphologyEx(m, cv2.MORPH_CLOSE, k, iterations=2)
+    m = cv2.dilate(m, k, iterations=1)
+    m[np.isin(pb, ids(IDENTITY))] = 0  # never repaint the face, hair, hat...
+    f = max(3, int(min(h, w) * 0.008) | 1)
+    return cv2.GaussianBlur(m.astype(np.float32), (f, f), 0).clip(0, 1)
+
+
 def lanczos_upscale(img: np.ndarray, size: tuple[int, int]) -> np.ndarray:
     return cv2.resize(img, size, interpolation=cv2.INTER_LANCZOS4)
 
@@ -94,7 +134,8 @@ def lanczos_upscale(img: np.ndarray, size: tuple[int, int]) -> np.ndarray:
 def compose_hires(original: Image.Image, run_model: Callable[[Image.Image], Image.Image], *,
                   model_size: tuple[int, int] = (576, 864),
                   upscaler: Upscaler | None = None,
-                  target_long_side: int | None = 3840) -> tuple[Image.Image, dict]:
+                  target_long_side: int | None = 3840,
+                  mask_fn: Callable[[np.ndarray, np.ndarray], np.ndarray] | None = None) -> tuple[Image.Image, dict]:
     """Full 4K pipeline. `run_model(person_low) -> dressed_low` wraps the try-on model.
 
     Returns (final image, debug info). `model_size` is (width, height) the model
@@ -110,7 +151,11 @@ def compose_hires(original: Image.Image, run_model: Callable[[Image.Image], Imag
     if out_low.shape[:2] != feed.shape[:2]:
         out_low = cv2.resize(out_low, model_size, interpolation=cv2.INTER_LANCZOS4)
 
-    m_low = change_mask(feed, out_low)
+    mask_kind = "semantic" if mask_fn else "difference"
+    try:
+        m_low = mask_fn(feed, out_low) if mask_fn else change_mask(feed, out_low)
+    except Exception:
+        m_low, mask_kind = change_mask(feed, out_low), "difference (parser failed)"
 
     up = upscaler(out_low) if upscaler else out_low
     up = lanczos_upscale(up, (pw, ph)) if up.shape[:2] != (ph, pw) else up
@@ -120,7 +165,8 @@ def compose_hires(original: Image.Image, run_model: Callable[[Image.Image], Imag
     comp = comp[box.top:box.top + box.height, box.left:box.left + box.width]
 
     info = {"source_size": [box.width, box.height], "model_size": list(model_size),
-            "changed_fraction": float(m_low.mean()), "upscaler": "esrgan" if upscaler else "lanczos"}
+            "changed_fraction": float(m_low.mean()), "upscaler": "esrgan" if upscaler else "lanczos",
+            "mask": mask_kind}
     long_side = max(comp.shape[:2])
     if target_long_side and long_side < target_long_side:
         s = target_long_side / long_side

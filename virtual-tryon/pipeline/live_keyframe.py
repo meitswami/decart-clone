@@ -122,8 +122,10 @@ class LiveDresser:
     """Per-session driver: call process(frame) for every camera frame."""
 
     def __init__(self, dress: DressFn, *, model_aspect: float = 576 / 864,
-                 key_interval: float = 1.0, motion_refresh_px: float = 6.0, work_width: int = 320):
+                 key_interval: float = 1.0, motion_refresh_px: float = 6.0, work_width: int = 320,
+                 mask_fn: Callable[[np.ndarray, np.ndarray], np.ndarray] | None = None):
         self.dress = dress
+        self.mask_fn = mask_fn
         self.model_aspect = model_aspect
         self.key_interval = key_interval
         self.motion_refresh_px = motion_refresh_px
@@ -140,7 +142,13 @@ class LiveDresser:
             if dressed.shape != padded.shape:
                 dressed = cv2.resize(dressed, (padded.shape[1], padded.shape[0]))
             dressed = dressed[box.top:box.top + box.height, box.left:box.left + box.width]
-            self.comp.set_keyframe(frame, dressed)
+            mask = None
+            if self.mask_fn is not None:
+                try:
+                    mask = self.mask_fn(frame, dressed)
+                except Exception:
+                    mask = None
+            self.comp.set_keyframe(frame, dressed, mask)
             self.stats["keyframes"] += 1
             self.stats["key_ms"].append(round((time.time() - t) * 1000))
         finally:
