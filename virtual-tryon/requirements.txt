@@ -16,8 +16,8 @@ onnxruntime==1.20.1      # rembg backend (CPU); swap for onnxruntime-gpu on the 
 mediapipe==0.10.18
 
 # ---- Live transport ----
-aiortc==1.9.0            # WebRTC in Python
-av==13.1.0
+aiortc==1.15.0           # WebRTC in Python (tested)
+av==17.1.0
 
 # NOTE: The heavy ML deps for the local live engine (torch, diffusers,
 # StreamDiffusionV2, FlashVSR, FASHN) are installed ONLY on the GPU box via

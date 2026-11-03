@@ -9,10 +9,12 @@ from pathlib import Path
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 
 from .config import settings
 from . import limits, consent, sessions
 from .decart_tokens import DecartTokenError, mint_client_token
+from .engine_ticket import TicketError, mint_ticket
 from pipeline import garment as garment_mod
 from pipeline import photo_tryon
 
@@ -65,12 +67,13 @@ def health():
 @app.get("/config")
 def public_config():
     """What the page needs to know. Never includes secrets or provider names."""
-    ready = settings.live_backend == "local" or bool(settings.decart_api_key)
+    ready = bool(settings.engine_secret) if settings.live_backend == "local" else bool(settings.decart_api_key)
     return {"brand": settings.brand_name,
             "live_ready": ready,
             "max_session_seconds": settings.max_session_seconds,
             "access_code_required": bool(settings.access_code),
-            "recording_enabled": settings.recording_enabled}
+            "recording_enabled": settings.recording_enabled,
+            "live_backend": settings.live_backend}
 
 
 @app.get("/usage")
@@ -90,11 +93,25 @@ async def garment_prepare(file: UploadFile = File(...),
 @app.post("/photo/tryon")
 async def photo_tryon_ep(person: UploadFile = File(...),
                          garment: UploadFile = File(...),
-                         category: str = Form("tops")):
+                         category: str = Form("tops"),
+                         garment_photo_type: str = Form("flat-lay"),
+                         quality: str = Form("balanced")):
+    if category not in ("tops", "bottoms", "one-pieces"):
+        return _err(422, "bad_category", "Garment type must be top, bottom or one-piece.")
+    if garment_photo_type not in ("flat-lay", "model"):
+        garment_photo_type = "flat-lay"
     p = await person.read()
     g = await garment.read()
-    out = photo_tryon.run(p, g, category)
-    return Response(content=out, media_type="image/png")
+    if len(p) > 25_000_000 or len(g) > 25_000_000:
+        return _err(413, "too_large", "Photos must be under 25 MB.")
+    try:
+        out = await run_in_threadpool(photo_tryon.run, p, g, category,
+                                      garment_photo_type=garment_photo_type, quality=quality)
+    except Exception:
+        log.exception("photo try-on failed")
+        return _err(502, "photo_failed", "Couldn't create the try-on photo. Please try again.")
+    kind = "image/jpeg" if out[:2] == b"\xff\xd8" else "image/png"
+    return Response(content=out, media_type=kind, headers={"Cache-Control": "no-store"})
 
 
 @app.post("/live/token")
@@ -144,8 +161,17 @@ async def live_token(request: Request,
                             headers={"Cache-Control": "no-store"})
 
     sid = sessions.start(store_id, record)
+    try:
+        ticket = mint_ticket(settings.engine_secret, session_id=sid, store_id=store_id,
+                             max_seconds=settings.max_session_seconds)
+    except TicketError:
+        sessions.end(sid)
+        limits.release_session(store_id)
+        return _err(503, "live_unavailable", "Live try-on isn't available right now.")
+    import json as _json
     return JSONResponse({**base, "backend": "local", "session_id": sid,
-                         "engine_url": settings.gpu_engine_url},
+                         "engine_url": settings.gpu_engine_url.rstrip("/"), "ticket": ticket,
+                         "ice_servers": _json.loads(settings.ice_servers)},
                         headers={"Cache-Control": "no-store"})
 
 
