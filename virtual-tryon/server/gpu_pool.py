@@ -29,7 +29,9 @@ from .config import settings
 log = logging.getLogger("tryon.gpu")
 
 UA = {"User-Agent": "vto-server/1.0"}  # RunPod's proxy rejects default library user-agents
-DEFAULT_ETA = {"resume": 90, "create": 150, "boot": 60}
+# Measured on RunPod (EU-RO-1, Nov 2026): finding a GPU 0-150 s, starting 15-60 s,
+# loading the models from the network volume ~190 s. Replaced by real history.
+DEFAULT_ETA = {"resume": 240, "create": 360, "boot": 200, "any": 330}
 
 # Runs first on every GPU boot: refresh the code on the volume from GitHub
 # (python only: the slim image has no git/curl), keep the old copy if offline.
@@ -79,7 +81,8 @@ class GpuPool:
         return settings.gpu_worker_url_template.format(pod=self.pod_id) if self.pod_id else None
 
     def eta(self, kind: str) -> int:
-        past = [h["seconds"] for h in self._state.get("history", []) if h["kind"] == kind][-5:]
+        hist = self._state.get("history", [])
+        past = [h["seconds"] for h in hist if kind == "any" or h["kind"] == kind][-5:]
         return int(statistics.median(past)) if past else DEFAULT_ETA[kind]
 
     # ---------- RunPod API ----------
@@ -213,7 +216,7 @@ class GpuPool:
             return {"state": "ready"}
         if self._live.get("state") == "unavailable" and time.time() - self._live.get("at", 0) < 60:
             return {"state": "unavailable", "message": self._live.get("message")}
-        return {"state": "asleep", "eta_s": self.eta("resume")}
+        return {"state": "asleep", "eta_s": self.eta("any")}
 
     def _rate_ok(self, ip: str) -> bool:
         now = time.time()
@@ -239,7 +242,7 @@ class GpuPool:
             if not self._rate_ok(ip):
                 return {"state": "unavailable", "message": "Too many try-ons started. Please wait a few minutes."}
             self._live = {"state": "waking", "stage": STAGES["request"], "kind": "resume",
-                          "eta_s": self.eta("resume"), "started": time.time()}
+                          "eta_s": self.eta("any"), "started": time.time()}
             self._task = asyncio.create_task(self._wake())
         return await self.status()
 
