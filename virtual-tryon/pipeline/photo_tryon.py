@@ -116,6 +116,19 @@ def load_parser():
     return _PARSER or None
 
 
+def detect_garment_photo_type(garment) -> str:
+    """'model' if a person is visible in the garment photo (face/arms/hands/legs),
+    else 'flat-lay'. Picking the wrong one makes the model blend the wearer's
+    skin into the garment (seen on the first real run)."""
+    parser = load_parser()
+    if parser is None:
+        return "flat-lay"
+    import numpy as np
+    lab = parser.predict(garment)
+    person_px = np.isin(lab, [1, 12, 13, 14]).mean()  # face, arms, hands, legs
+    return "model" if person_px > 0.01 else "flat-lay"
+
+
 def garment_mask_fn(category: str):
     """Returns mask_fn(before_rgb, after_rgb) for hires/live, or None."""
     parser = load_parser()
@@ -144,7 +157,7 @@ def _call_model(person: Image.Image, garment: Image.Image, category: str,
 
 
 def run_local(person_bytes: bytes, garment_bytes: bytes, category: str = "tops", *,
-              garment_photo_type: str = "flat-lay", quality: str = "balanced",
+              garment_photo_type: str = "auto", quality: str = "balanced",
               target_long_side: int | None = 3840, seed: int = 42) -> tuple[bytes, dict]:
     from .hires import compose_hires
     # Phone photos carry their rotation in EXIF; apply it or people come out sideways.
@@ -152,6 +165,10 @@ def run_local(person_bytes: bytes, garment_bytes: bytes, category: str = "tops",
     garment = ImageOps.exif_transpose(Image.open(io.BytesIO(garment_bytes))).convert("RGB")
     t = time.time()
     timing = {}
+
+    if garment_photo_type not in ("model", "flat-lay"):
+        garment_photo_type = detect_garment_photo_type(garment)
+    timing["garment_photo_type"] = garment_photo_type
 
     def model(p_low: Image.Image) -> Image.Image:
         t0 = time.time()

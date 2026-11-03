@@ -41,9 +41,11 @@ SAVE_EVERY_S = 0.5
 def _dress_fn(garment: Image.Image, category: str):
     from pipeline import photo_tryon
     if photo_tryon._available():
+        gpt = photo_tryon.detect_garment_photo_type(garment)
+
         def dress(frame_rgb: np.ndarray) -> np.ndarray:
             img = photo_tryon._call_model(Image.fromarray(frame_rgb), garment, category,
-                                          "flat-lay", "live", seed=7)
+                                          gpt, "live", seed=7)
             return np.asarray(img.convert("RGB").resize((frame_rgb.shape[1], frame_rgb.shape[0])))
         return dress, "fashn"
 

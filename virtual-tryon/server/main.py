@@ -153,7 +153,7 @@ async def analyze_person(image: UploadFile = File(...)):
 async def photo_tryon_ep(person: UploadFile = File(...),
                          garment: UploadFile = File(...),
                          category: str = Form("tops"),
-                         garment_photo_type: str = Form("flat-lay"),
+                         garment_photo_type: str = Form("auto"),
                          quality: str = Form("balanced"),
                          consented: bool = Form(False),
                          is_adult: bool = Form(False),
@@ -162,8 +162,8 @@ async def photo_tryon_ep(person: UploadFile = File(...),
                          source: str = Form("")):
     if category not in ("tops", "bottoms", "one-pieces"):
         return _err(422, "bad_category", "Garment type must be top, bottom or one-piece.")
-    if garment_photo_type not in ("flat-lay", "model"):
-        garment_photo_type = "flat-lay"
+    if garment_photo_type not in ("flat-lay", "model", "auto"):
+        garment_photo_type = "auto"
     p = await person.read()
     g = await garment.read()
     if len(p) > 25_000_000 or len(g) > 25_000_000:
