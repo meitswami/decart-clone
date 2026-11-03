@@ -16,7 +16,8 @@ export CAPTURES_DIR=/workspace/vto/captures
 # Body parser: MediaPipe (Apache-2.0) via a stand-in `fashn_human_parser` package,
 # so neither our code nor FASHN loads the non-commercial SegFormer weights.
 export MEDIAPIPE_MODELS=/workspace/vto/models/mediapipe
-if [ -f "$MEDIAPIPE_MODELS/selfie_multiclass_256x256.tflite" ] && python -c "import mediapipe" 2>/dev/null; then
+if [ -f "$MEDIAPIPE_MODELS/selfie_multiclass_256x256.tflite" ] && [ -e "$ENV/syslib/usr/lib/x86_64-linux-gnu/libEGL.so.1" ] \
+   && python -c "import mediapipe" 2>/dev/null; then
   export PYTHONPATH="/workspace/app/virtual-tryon/shims:/workspace/app/virtual-tryon${PYTHONPATH:+:$PYTHONPATH}"
 else
   echo "WARNING: MediaPipe parser not installed (run scripts/setup_mediapipe.sh)"
