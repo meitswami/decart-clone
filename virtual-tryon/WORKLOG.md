@@ -244,3 +244,20 @@ Rules we follow:
   - white henley shirt on a seated man;
   - pink sharara set on a woman wearing a sharara set.
 - **Live default changed to our GPU engine.** It repaints only the garment area on the real camera picture, so the person and background are untouched. The hosted engine redraws the whole frame; it is still available with `?engine=hosted` or `LIVE_DEFAULT_ENGINE=hosted`.
+
+### 17:25 — Owner asked about Decart, the "AI Generated" badge, hands, models in use, and live video download
+- **Badge and broken hands come from Decart.** The live test ran on the hosted Decart engine, which was still the default on the deployed site. It burns an "AI Generated" badge into the video and redraws the whole frame, which spoiled the thumb and collar.
+- **Hosted live engine now off** by default (`HOSTED_LIVE_ENABLED=false`). The site never calls Decart, even with `?engine=hosted`. Provider names are removed from `/health` and `/config` (they now show a neutral `live_engine`).
+- **Photo: shopper's own hands kept,** plus anything held next to them (phone, purse); the parser's "hands" label and nearby non-body pixels are excluded from the paste mask.
+- **Photo: model runs on a crop around the person,** grown to 2:3 with room for drapes. Full-length photos get about twice as many model pixels on the garment, giving a sharper print and fewer smears.
+- **Live: hands stay visible over the garment.** A hand that moves in front after a keyframe is detected (change from the keyframe plus skin colour), so the garment is not painted over it.
+  - Synthetic test: hand kept in 10 of 10 frames, and the garment still shown elsewhere.
+  - Existing live test: 95% of the shirt dressed while moving.
+- **Live recording:** pulsing ● REC while live, **📸 Save photo** at any moment, and after Stop a video player with **⬇ Download video** showing length and size. Tested in a phone browser: photo and WebM downloaded.
+- **Real GPU test on the branch (17:47–17:57, then stopped):**
+  - Wake took 339 s.
+  - 5 try-ons in 12–27 s. Hands, rings, watch, bangles and the hand on the railing are pixel-identical to the originals; only the outfit changed.
+  - Known limit: going from a saree to a kurta set left a strip of the old saree hem at the feet. That is FASHN's own output.
+- **Live-site GPU** fell asleep by itself at 17:35 after 15 idle minutes, as designed.
+- **Licence finding:** fashn-human-parser inherits NVIDIA's SegFormer licence, which is **non-commercial**. It needs replacing before commercial use; proposed replacement is MediaPipe segmentation plus hand tracking (Apache-2.0). Everything else in the stack is commercially licensed.
+- Full explanation in the Project doc `claude/HOW-IT-WORKS.md`, kept out of the public repo.

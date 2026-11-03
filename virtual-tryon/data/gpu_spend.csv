@@ -14,3 +14,5 @@ time_ist,event,pod_id,name,gpu,cost_per_hr_usd
 2026-11-03 16:57,stop,lsz70xp9ydj40a,vto-gpu(site test),RTX 4090,~0.69
 2026-11-03 16:59,create,z14q2aclblm2ft,vto-gpu(site test),RTX 4090,~0.69
 2026-11-03 17:05,stop,z14q2aclblm2ft,vto-gpu(site test),RTX 4090,~0.69
+2026-11-03 17:47,create,3ai5ax7l7fw070,vto-gpu(branch test),,~0.69-1.19
+2026-11-03 17:44,stop,3ai5ax7l7fw070,vto-gpu(branch test),,~0.69-1.19
