@@ -18,6 +18,7 @@ import asyncio
 import base64
 import json
 import logging
+import re
 import statistics
 import time
 from pathlib import Path
@@ -167,10 +168,20 @@ class GpuPool:
             return None
         try:
             d = await self._gql(c, "query($i: PodFilter) { pod(input: $i) { id desiredStatus "
-                                   "runtime { uptimeInSeconds } } }", {"i": {"podId": self.pod_id}})
+                                   "machine { gpuDisplayName } runtime { uptimeInSeconds } } }",
+                                {"i": {"podId": self.pod_id}})
         except RuntimeError:
             return None
         return d.get("pod")
+
+    @staticmethod
+    def _gpu_allowed(pod: dict | None) -> bool:
+        """Is this pod's GPU still on our list? (e.g. a slow GPU we have since dropped)"""
+        name = ((pod or {}).get("machine") or {}).get("gpuDisplayName")
+        if not name:
+            return True
+        pat = re.compile(r"\b" + re.escape(name) + r"\b", re.I)
+        return any(pat.search(t) for t in settings.gpu_types.split(","))
 
     async def _create_any(self, c: httpx.AsyncClient) -> str:
         """Try every volume (data centre) in order, retrying until a GPU frees up."""
@@ -413,6 +424,10 @@ class GpuPool:
                 if pod and pod.get("desiredStatus") == "RUNNING":
                     kind = "boot"
                     self._begin_session("boot")
+                elif pod and pod.get("desiredStatus") == "EXITED" and not self._gpu_allowed(pod):
+                    log.info("stopped pod has a GPU we no longer use (%s); creating a fresh pod",
+                             (pod.get("machine") or {}).get("gpuDisplayName"))
+                    kind = "create"
                 elif pod and pod.get("desiredStatus") == "EXITED":
                     try:
                         await self._gql(c, "mutation($i: PodResumeInput!) { podResume(input: $i) { id } }",
