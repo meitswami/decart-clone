@@ -1,0 +1,26 @@
+# ---- Core server (CPU-friendly, runs anywhere) ----
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+python-multipart==0.0.17
+pydantic==2.10.3
+pydantic-settings==2.6.1
+httpx==0.28.1
+Pillow==11.0.0
+numpy==2.1.3
+
+# ---- Garment prep automation (CPU ok) ----
+rembg==2.0.59            # background removal
+onnxruntime==1.20.1      # rembg backend (CPU); swap for onnxruntime-gpu on the GPU box
+
+# ---- Pose + segmentation (CPU ok, faster on GPU) ----
+mediapipe==0.10.18
+
+# ---- Live transport ----
+aiortc==1.9.0            # WebRTC in Python
+av==13.1.0
+
+# NOTE: The heavy ML deps for the local live engine (torch, diffusers,
+# StreamDiffusionV2, FlashVSR, FASHN) are installed ONLY on the GPU box via
+# scripts/download_models.sh + the Dockerfile, because they are large and
+# need CUDA. Keeping them out of this file lets the server layer install and
+# run on a plain CPU VPS.
