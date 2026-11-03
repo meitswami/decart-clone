@@ -98,6 +98,27 @@ SKIN = {"tops": ["arms", "hands", "torso"], "bottoms": ["legs"], "one-pieces": [
 IDENTITY = ["face", "hair", "hat", "glasses", "jewelry", "bag"]
 
 
+def keep_hands(pb: np.ndarray) -> np.ndarray:
+    """Pixels to keep from the original photo around each hand: the hand itself
+    plus non-body pixels right next to it (a phone, cup or bag being held).
+    Try-on models redraw hands and drop held objects; we keep the real ones."""
+    hands = (pb == _IDS["hands"]).astype(np.uint8)
+    keep = hands.astype(bool)
+    if not keep.any():
+        return keep
+    n, lab, stats, _ = cv2.connectedComponentsWithStats(hands, 8)
+    not_body = np.isin(pb, [_IDS["background"], _IDS["bag"]])
+    for i in range(1, n):
+        area = stats[i, cv2.CC_STAT_AREA]
+        if area < 30:
+            continue
+        r = max(3, int(0.6 * np.sqrt(area))) | 1
+        k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (r, r))
+        near = cv2.dilate((lab == i).astype(np.uint8), k) > 0
+        keep |= near & not_body
+    return keep
+
+
 def semantic_mask(before: np.ndarray, after: np.ndarray, category: str,
                   parse: Callable[[np.ndarray], np.ndarray]) -> np.ndarray:
     """Garment region from a human parser instead of colour difference alone.
@@ -123,6 +144,7 @@ def semantic_mask(before: np.ndarray, after: np.ndarray, category: str,
     m = cv2.morphologyEx(m, cv2.MORPH_CLOSE, k, iterations=2)
     m = cv2.dilate(m, k, iterations=1)
     m[np.isin(pb, ids(IDENTITY))] = 0  # never repaint the face, hair, hat...
+    m[keep_hands(pb)] = 0              # nor the hands, or a phone/bag held in them
     f = max(3, int(min(h, w) * 0.008) | 1)
     return cv2.GaussianBlur(m.astype(np.float32), (f, f), 0).clip(0, 1)
 
@@ -135,14 +157,30 @@ def compose_hires(original: Image.Image, run_model: Callable[[Image.Image], Imag
                   model_size: tuple[int, int] = (576, 864),
                   upscaler: Upscaler | None = None,
                   target_long_side: int | None = 3840,
-                  mask_fn: Callable[[np.ndarray, np.ndarray], np.ndarray] | None = None) -> tuple[Image.Image, dict]:
+                  mask_fn: Callable[[np.ndarray, np.ndarray], np.ndarray] | None = None,
+                  person_box: Callable[[np.ndarray], tuple[int, int, int, int] | None] | None = None,
+                  ) -> tuple[Image.Image, dict]:
     """Full 4K pipeline. `run_model(person_low) -> dressed_low` wraps the try-on model.
 
     Returns (final image, debug info). `model_size` is (width, height) the model
-    is fed at; its aspect decides the padding.
+    is fed at; its aspect decides the padding. `person_box(rgb) -> (x0, y0, x1, y1)`
+    lets the model work on a crop around the person, so a full-length photo
+    gets far more model pixels on the garment (sharper print, cleaner edges).
     """
-    src = np.asarray(original.convert("RGB"))
+    full = np.asarray(original.convert("RGB"))
     aspect = model_size[0] / model_size[1]
+    region = None
+    if person_box is not None:
+        try:
+            region = person_box(full)
+        except Exception:
+            region = None
+    if region:
+        x0, y0, x1, y1 = region
+        src = full[y0:y1, x0:x1]
+    else:
+        x0, y0 = 0, 0
+        src = full
     padded, box = pad_to_aspect(src, aspect)
     ph, pw = padded.shape[:2]
 
@@ -163,8 +201,13 @@ def compose_hires(original: Image.Image, run_model: Callable[[Image.Image], Imag
 
     comp = (padded.astype(np.float32) * (1 - m) + up.astype(np.float32) * m).round().clip(0, 255).astype(np.uint8)
     comp = comp[box.top:box.top + box.height, box.left:box.left + box.width]
+    if src is not full:
+        whole = full.copy()
+        whole[y0:y0 + comp.shape[0], x0:x0 + comp.shape[1]] = comp
+        comp = whole
 
-    info = {"source_size": [box.width, box.height], "model_size": list(model_size),
+    info = {"source_size": [full.shape[1], full.shape[0]], "model_size": list(model_size),
+            "person_crop": [int(v) for v in region] if region else None,
             "changed_fraction": float(m_low.mean()), "upscaler": "esrgan" if upscaler else "lanczos",
             "mask": mask_kind}
     long_side = max(comp.shape[:2])

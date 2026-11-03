@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     # "hosted" = the hosted live engine (instant start, but it redraws the whole frame).
     # Visitors can still pick one with ?engine=gpu or ?engine=hosted.
     live_default_engine: str = "gpu"
+    # The hosted live engine is OFF unless switched on here: with it off, the
+    # site never calls the hosted provider, even with ?engine=hosted.
+    hosted_live_enabled: bool = False
     engine_max_sessions: int = 2
     live_key_interval: float = 1.0
     keepalive_file: str = "/workspace/.keepalive"

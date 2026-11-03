@@ -111,19 +111,32 @@ def _asleep() -> JSONResponse:
                         status_code=503, headers={"Cache-Control": "no-store"})
 
 
+def _hosted_ok() -> bool:
+    return settings.hosted_live_enabled and settings.live_backend == "decart" and bool(settings.decart_api_key)
+
+
+def _live_engine() -> str:
+    """Neutral name for the default live engine (never the provider's name)."""
+    can_gpu = _pool() or settings.live_backend == "local"
+    if _hosted_ok() and (settings.live_default_engine == "hosted" or not can_gpu):
+        return "hosted"
+    return "gpu" if can_gpu else "none"
+
+
 @app.get("/health")
 def health():
-    return {"ok": True, "brand": settings.brand_name, "live_backend": settings.live_backend,
+    return {"ok": True, "brand": settings.brand_name, "live_engine": _live_engine(),
             "photo_model": _photo_ready()}
 
 
 @app.get("/config")
 def public_config():
     """What the page needs to know. Never includes secrets or provider names."""
-    ready = bool(settings.engine_secret) if settings.live_backend == "local" else bool(settings.decart_api_key)
+    eng = _live_engine()
+    ready = (eng == "gpu" and bool(settings.engine_secret)) or eng == "hosted"
     return {"brand": settings.brand_name,
             "live_ready": ready,
-            "live_backend": settings.live_backend,
+            "live_engine": eng,
             "live_transport": settings.live_transport,
             "max_session_seconds": settings.max_session_seconds,
             "access_code_required": bool(settings.access_code),
@@ -268,7 +281,9 @@ async def live_token(request: Request,
     can_gpu = _pool() or settings.live_backend == "local"
     want_hosted = engine == "hosted" or (engine != "gpu" and (
         settings.live_default_engine == "hosted" or not can_gpu))
-    use_hosted = settings.live_backend == "decart" and bool(settings.decart_api_key) and want_hosted
+    use_hosted = _hosted_ok() and want_hosted
+    if not use_hosted and not can_gpu:
+        return _err(503, "live_unavailable", "Live try-on isn't available right now.")
     if not use_hosted and _pool():
         gpu.touch()
         if not await gpu.is_ready():
@@ -299,7 +314,7 @@ async def live_token(request: Request,
         if trial:  # hosted engine: we may keep the shopper's own camera input only
             captures.update_meta(trial, kind="live", engine="hosted", consent=True, store_id=store_id)
         log.info("live session %s started for store %s", sid[:8], store_id)
-        return JSONResponse({**base, "backend": "decart", "session_id": sid, "trial_id": trial,
+        return JSONResponse({**base, "backend": "hosted", "session_id": sid, "trial_id": trial,
                              "model": settings.decart_model,
                              "client_token": token["apiKey"],
                              "expires_at": token["expiresAt"]},

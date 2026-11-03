@@ -335,7 +335,8 @@ function startRecorder(stream) {
   const chunks = [];
   rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
   rec.start(1000);
-  return { rec, chunks, mimeType };
+  $("#recDot").hidden = false;
+  return { rec, chunks, mimeType, t0: Date.now() };
 }
 function finishRecorder(r, trialId, upload) {
   if (!r) return;
@@ -343,9 +344,13 @@ function finishRecorder(r, trialId, upload) {
     const blob = new Blob(r.chunks, { type: r.mimeType.split(";")[0] });
     if (!blob.size) return;
     const ext = r.mimeType.includes("mp4") ? "mp4" : "webm";
+    const url = URL.createObjectURL(blob);
     const a = $("#saveVideo");
-    a.href = URL.createObjectURL(blob);
+    a.href = url;
     a.download = `try-on-live-${Date.now()}.${ext}`;
+    $("#recPreview").src = url;
+    const secs = Math.round((Date.now() - r.t0) / 1000);
+    $("#videoInfo").textContent = `${secs}s · ${(blob.size / 1048576).toFixed(1)} MB · ${ext.toUpperCase()}`;
     $("#videoActions").hidden = false;
     if (upload && trialId) {
       const fd = new FormData();
@@ -510,11 +515,12 @@ async function startLive() {
     lstat("Starting…", "", true);
     data = await mintSession();
     lstat("Connecting…", "", true);
-    if (data.backend === "decart") await connectHosted(data);
+    if (data.backend === "hosted") await connectHosted(data);
     else if (data.transport === "webrtc") await connectRtc(data);
     else await connectWs(data);
     if (!live) return;
     $("#liveStop").disabled = false;
+    $("#liveSnap").disabled = false;
     lstat(cfg.photo_model_ready ? "Live. Hold still for a second while it dresses you." : "Live (stand-in model until the real one is installed).", "ok");
     let left = data.max_seconds;
     $("#timer").textContent = `${left}s left`;
@@ -540,6 +546,7 @@ function stopLive(message = "Stopped.", tone = "") {
     clearInterval(s.timer);
     clearInterval(s.statsTimer);
     finishRecorder(s.recorder, s.trialId, s.upload && s.kind === "ws");
+    if (s.recorder) message = `${message} Your video is ready below.`;
     if (s.camRecorder) finishCameraRecorder(s.camRecorder, s.trialId);
     try { s.ws?.close(); } catch {}
     try { s.pc?.close(); } catch {}
@@ -549,11 +556,30 @@ function stopLive(message = "Stopped.", tone = "") {
   }
   $("#liveSrc").srcObject = null;
   $("#timer").textContent = "";
+  $("#recDot").hidden = true;
+  $("#liveSnap").disabled = true;
   $("#liveStart").disabled = false;
   $("#liveStop").disabled = true;
   lstat(message, tone);
 }
 $("#liveStart").onclick = startLive;
+// Save the current live picture as a photo.
+$("#liveSnap").onclick = () => {
+  const vid = $("#liveOutVideo");
+  const src = !vid.hidden && vid.videoWidth ? vid : $("#liveOut");
+  const c = document.createElement("canvas");
+  c.width = src.videoWidth || src.width;
+  c.height = src.videoHeight || src.height;
+  c.getContext("2d").drawImage(src, 0, 0, c.width, c.height);
+  c.toBlob((b) => {
+    if (!b) return;
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(b);
+    a.download = `try-on-live-${Date.now()}.jpg`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  }, "image/jpeg", 0.95);
+};
 $("#liveStop").onclick = () => stopLive();
 $("#liveFlip").onclick = async () => {
   liveFacing = liveFacing === "user" ? "environment" : "user";
