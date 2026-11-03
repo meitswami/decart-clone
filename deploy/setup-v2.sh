@@ -80,7 +80,7 @@ GPU_MODE=runpod
 RUNPOD_API_KEY=
 GPU_NETWORK_VOLUME=$VOLUME
 GPU_GIT_BRANCH=$BRANCH
-GPU_IDLE_MINUTES=15
+GPU_IDLE_MINUTES=2
 GPU_WAKES_PER_IP_PER_HOUR=6
 GPU_DAILY_WAKE_LIMIT=200
 GPU_STATE_FILE=$DATA_DIR/gpu_state.json
@@ -97,6 +97,9 @@ EOT
   chmod 640 "$ENV_FILE"
   echo "Created $ENV_FILE (copied your domain and live-engine key from $OLD_ENV)."
 fi
+
+# Owner's choice (Nov 2026): GPU sleeps after 2 idle minutes (was 15).
+sed -i -E 's/^GPU_IDLE_MINUTES=15$/GPU_IDLE_MINUTES=2/' "$ENV_FILE"
 
 if ! grep -qE '^RUNPOD_API_KEY=.{10,}' "$ENV_FILE"; then
   echo

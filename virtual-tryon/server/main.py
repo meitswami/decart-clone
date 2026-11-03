@@ -111,19 +111,32 @@ def _asleep() -> JSONResponse:
                         status_code=503, headers={"Cache-Control": "no-store"})
 
 
+def _hosted_ok() -> bool:
+    return settings.hosted_live_enabled and settings.live_backend == "decart" and bool(settings.decart_api_key)
+
+
+def _live_engine() -> str:
+    """Neutral name for the default live engine (never the provider's name)."""
+    can_gpu = _pool() or settings.live_backend == "local"
+    if _hosted_ok() and (settings.live_default_engine == "hosted" or not can_gpu):
+        return "hosted"
+    return "gpu" if can_gpu else "none"
+
+
 @app.get("/health")
 def health():
-    return {"ok": True, "brand": settings.brand_name, "live_backend": settings.live_backend,
+    return {"ok": True, "brand": settings.brand_name, "live_engine": _live_engine(),
             "photo_model": _photo_ready()}
 
 
 @app.get("/config")
 def public_config():
     """What the page needs to know. Never includes secrets or provider names."""
-    ready = bool(settings.engine_secret) if settings.live_backend == "local" else bool(settings.decart_api_key)
+    eng = _live_engine()
+    ready = (eng == "gpu" and bool(settings.engine_secret)) or eng == "hosted"
     return {"brand": settings.brand_name,
             "live_ready": ready,
-            "live_backend": settings.live_backend,
+            "live_engine": eng,
             "live_transport": settings.live_transport,
             "max_session_seconds": settings.max_session_seconds,
             "access_code_required": bool(settings.access_code),
@@ -161,10 +174,13 @@ async def analyze_person(image: UploadFile = File(...)):
             return {"available": True, "asleep": True}
         import httpx
         try:
+            t0 = time.time()
             async with httpx.AsyncClient(timeout=60) as c:
                 r = await c.post(f"{gpu.worker_url()}/analyze", files={"image": ("p.jpg", data)},
                                  headers={"Authorization": f"Bearer {settings.worker_token}",
                                           "User-Agent": "vto-server/1.0"})
+            if r.status_code == 200:
+                gpu.record("fit", time.time() - t0)
             return r.json() if r.status_code == 200 else {"available": False}
         except Exception:
             log.exception("remote analysis failed")
@@ -225,6 +241,8 @@ async def photo_tryon_ep(person: UploadFile = File(...),
             out, _info = await run_in_threadpool(
                 lambda: photo_tryon.run_remote(p, g, category, url=gpu.worker_url(), token=settings.worker_token,
                                                garment_photo_type=garment_photo_type, quality=quality))
+            gpu.record("photo", float((_info or {}).get("total_s") or (time.time() - t)))
+            gpu.touch()
         else:
             out = await run_in_threadpool(photo_tryon.run, p, g, category,
                                           garment_photo_type=garment_photo_type, quality=quality)
@@ -268,7 +286,9 @@ async def live_token(request: Request,
     can_gpu = _pool() or settings.live_backend == "local"
     want_hosted = engine == "hosted" or (engine != "gpu" and (
         settings.live_default_engine == "hosted" or not can_gpu))
-    use_hosted = settings.live_backend == "decart" and bool(settings.decart_api_key) and want_hosted
+    use_hosted = _hosted_ok() and want_hosted
+    if not use_hosted and not can_gpu:
+        return _err(503, "live_unavailable", "Live try-on isn't available right now.")
     if not use_hosted and _pool():
         gpu.touch()
         if not await gpu.is_ready():
@@ -299,7 +319,7 @@ async def live_token(request: Request,
         if trial:  # hosted engine: we may keep the shopper's own camera input only
             captures.update_meta(trial, kind="live", engine="hosted", consent=True, store_id=store_id)
         log.info("live session %s started for store %s", sid[:8], store_id)
-        return JSONResponse({**base, "backend": "decart", "session_id": sid, "trial_id": trial,
+        return JSONResponse({**base, "backend": "hosted", "session_id": sid, "trial_id": trial,
                              "model": settings.decart_model,
                              "client_token": token["apiKey"],
                              "expires_at": token["expiresAt"]},
@@ -317,6 +337,8 @@ async def live_token(request: Request,
         return _err(503, "live_unavailable", "Live try-on isn't available right now.")
     if trial:
         captures.update_meta(trial, kind="live", engine="gpu", consent=True, store_id=store_id)
+    if _pool():
+        gpu.live_started(sid)
     engine_url = gpu.worker_url() if _pool() else settings.gpu_engine_url.rstrip("/")
     return JSONResponse({**base, "backend": "local", "transport": settings.live_transport,
                          "session_id": sid, "trial_id": trial,
@@ -351,6 +373,8 @@ async def live_end(session_id: str = Form(""), store_id: str = Form(""),
     """Close a session. Duration is measured on the server, not trusted from
     the browser; store_id/seconds are accepted but ignored (old clients)."""
     used = sessions.end(session_id) if session_id else None
+    if session_id and _pool():
+        gpu.live_ended(session_id)
     return {"ok": True, "charged_seconds": round(used, 1) if used is not None else None}
 
 
@@ -438,6 +462,16 @@ def admin_file(request: Request, day: str, trial_id: str, name: str):
         return FileResponse(captures.file_path(day, trial_id, name), headers={"Cache-Control": "private"})
     except (ValueError, FileNotFoundError):
         return _err(404, "missing", "Not found.")
+
+
+@app.get("/admin/api/costs")
+async def admin_costs(request: Request):
+    """Owner only: RunPod balance and what each GPU session cost, by try-on type."""
+    if not _admin_ok(request):
+        return _err(401, "auth", "Not authorised.")
+    if not _pool():
+        return {"enabled": False}
+    return JSONResponse({"enabled": True, **(await gpu.costs())}, headers={"Cache-Control": "no-store"})
 
 
 @app.get("/admin/export.zip")

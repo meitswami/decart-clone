@@ -154,6 +154,47 @@ def garment_mask_fn(category: str):
     return lambda before, after: semantic_mask(before, after, category, parse)
 
 
+def person_box_fn():
+    """Returns box(rgb) -> (x0, y0, x1, y1) around the person, grown to the model's
+    aspect with room for flared or draped garments; None when the person already
+    fills most of the photo (then the whole photo is used)."""
+    parser = load_parser()
+    if parser is None:
+        return None
+    import cv2
+    import numpy as np
+
+    def box(rgb: np.ndarray):
+        h, w = rgb.shape[:2]
+        s = min(1.0, 1024 / max(h, w))
+        small = cv2.resize(rgb, (int(w * s), int(h * s)), interpolation=cv2.INTER_AREA) if s < 1 else rgb
+        lab = np.asarray(parser.predict(small))
+        if lab.shape != small.shape[:2]:
+            lab = cv2.resize(lab.astype(np.uint8), (small.shape[1], small.shape[0]), interpolation=cv2.INTER_NEAREST)
+        ys, xs = np.nonzero(lab)
+        if ys.size < 0.01 * lab.size:
+            return None
+        x0, x1 = (np.percentile(xs, [0.5, 99.5]) / s).tolist()
+        y0, y1 = (np.percentile(ys, [0.5, 99.5]) / s).tolist()
+        bw, bh = x1 - x0, y1 - y0
+        mx = 0.18 * bw + 0.06 * bh  # room for dupattas, flared skirts, wider garments
+        x0, x1, y0, y1 = x0 - mx, x1 + mx, y0 - 0.06 * bh, y1 + 0.06 * bh
+        aspect = MODEL_SIZE[0] / MODEL_SIZE[1]
+        cw, ch = x1 - x0, y1 - y0
+        if cw / ch < aspect:
+            g = ch * aspect - cw
+            x0, x1 = x0 - g / 2, x1 + g / 2
+        else:
+            g = cw / aspect - ch
+            y0, y1 = y0 - g / 2, y1 + g / 2
+        x0, y0 = max(0, int(x0)), max(0, int(y0))
+        x1, y1 = min(w, int(round(x1))), min(h, int(round(y1)))
+        if (x1 - x0) * (y1 - y0) > 0.8 * w * h:
+            return None
+        return x0, y0, x1, y1
+    return box
+
+
 def _call_model(person: Image.Image, garment: Image.Image, category: str,
                 garment_photo_type: str, quality: str, seed: int) -> Image.Image:
     pipe = load()
@@ -189,7 +230,7 @@ def run_local(person_bytes: bytes, garment_bytes: bytes, category: str = "tops",
 
     final, info = compose_hires(person, model, model_size=MODEL_SIZE,
                                 upscaler=load_upscaler(), target_long_side=target_long_side,
-                                mask_fn=garment_mask_fn(category))
+                                mask_fn=garment_mask_fn(category), person_box=person_box_fn())
     info.update(timing, total_s=round(time.time() - t, 2), quality=quality)
     buf = io.BytesIO()
     final.save(buf, "JPEG", quality=95, subsampling=0)  # 4K PNGs are 20+ MB

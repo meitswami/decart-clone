@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     # "hosted" = the hosted live engine (instant start, but it redraws the whole frame).
     # Visitors can still pick one with ?engine=gpu or ?engine=hosted.
     live_default_engine: str = "gpu"
+    # The hosted live engine is OFF unless switched on here: with it off, the
+    # site never calls the hosted provider, even with ?engine=hosted.
+    hosted_live_enabled: bool = False
     engine_max_sessions: int = 2
     live_key_interval: float = 1.0
     keepalive_file: str = "/workspace/.keepalive"
@@ -62,7 +65,7 @@ class Settings(BaseSettings):
     gpu_image: str = "python:3.12-slim-bookworm"
     gpu_git_repo: str = "meitswami/decart-clone"
     gpu_github_token: str = ""            # only needed if the repo is private
-    gpu_idle_minutes: int = 15
+    gpu_idle_minutes: int = 2             # sleep after this many minutes with no try-on
     gpu_git_branch: str = "main"
     gpu_wake_timeout: int = 600
     gpu_wakes_per_ip_per_hour: int = 6

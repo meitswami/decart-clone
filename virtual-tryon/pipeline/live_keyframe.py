@@ -107,6 +107,22 @@ class KeyframeCompositor:
             flow = fwd
             fade = cv2.GaussianBlur(conf, (0, 0), 4)
 
+        # 3) Hands (or anything else) passing in front of the garment since the
+        #    keyframe: where the camera picture no longer matches the keyframe's
+        #    camera picture moved the same way, and it looks like skin, show the
+        #    real camera pixels instead of painting the garment over them.
+        key_moved = cv2.remap(k.src_small, (gx + flow[..., 0]).astype(np.float32),
+                              (gy + flow[..., 1]).astype(np.float32), cv2.INTER_LINEAR,
+                              borderMode=cv2.BORDER_REPLICATE)
+        changed = cv2.absdiff(cur, key_moved) > 28
+        ycc = cv2.cvtColor(cv2.resize(frame_rgb, (sw, sh), interpolation=cv2.INTER_AREA), cv2.COLOR_RGB2YCrCb)
+        skin = (ycc[..., 1] >= 133) & (ycc[..., 1] <= 180) & (ycc[..., 2] >= 77) & (ycc[..., 2] <= 135)
+        occ = (changed & skin).astype(np.uint8)
+        if occ.any():
+            k3 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+            occ = cv2.dilate(cv2.morphologyEx(occ, cv2.MORPH_OPEN, k3), k3, iterations=2)
+            fade = fade * (1.0 - cv2.GaussianBlur(occ.astype(np.float32), (0, 0), 1.5))
+
         flow_full = cv2.resize(flow.astype(np.float32), (w, h), interpolation=cv2.INTER_LINEAR) * np.float32(s)
         fade_full = cv2.resize(fade.astype(np.float32), (w, h), interpolation=cv2.INTER_LINEAR)
         X, Y = np.meshgrid(np.arange(w, dtype=np.float32), np.arange(h, dtype=np.float32))

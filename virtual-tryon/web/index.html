@@ -37,6 +37,29 @@
   .pill{border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:999px;padding:6px 14px;font:inherit;font-size:14px;cursor:pointer}
   .pill[aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:#fff}
   .grid button[hidden]{display:none}
+  .rec{color:#e5484d;font-weight:600;font-size:14px;animation:blink 1.2s ease-in-out infinite}
+  @keyframes blink{50%{opacity:.3}}
+  #recPreview{width:100%;max-height:60vh;border-radius:12px;background:#000;margin-top:10px}
+  .zoomable{position:relative;padding:0;border:0;background:none;cursor:zoom-in;flex:none;border-radius:12px}
+  .zoomhint{position:absolute;right:6px;bottom:6px;background:rgba(0,0,0,.6);color:#fff;border-radius:999px;font-size:12px;padding:3px 6px}
+  .linkbtn{background:none;border:0;padding:4px 0;color:var(--accent);font:inherit;font-size:14px;cursor:pointer}
+  #resultImg,#personPreview{cursor:zoom-in}
+  .zoombox{width:min(1000px,100%);height:min(92vh,100%);display:flex;flex-direction:column;background:var(--card);border-radius:16px;overflow:hidden}
+  .zoomstage{flex:1;position:relative;overflow:hidden;background:#111;touch-action:none;cursor:grab}
+  .zoomstage.drag{cursor:grabbing}
+  #zoomImg{position:absolute;left:50%;top:50%;max-width:none;max-height:none;user-select:none;-webkit-user-select:none;will-change:transform}
+  .zoombar{display:flex;gap:8px;align-items:center;padding:10px;flex-wrap:wrap}
+  .zoombar .btn{min-width:44px;justify-content:center}
+  .zoomtitle{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+  .costtiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin:12px 0}
+  .costtile{border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+  .costtile b{display:block;font-size:20px}
+  .costtile span{font-size:13px;color:var(--muted)}
+  .costh{font-size:15px;margin:16px 0 6px}
+  .tablewrap{overflow-x:auto}
+  .costtable{width:100%;border-collapse:collapse;font-size:14px}
+  .costtable th,.costtable td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+  .costtable .num{text-align:right;font-variant-numeric:tabular-nums}
   .preview{display:flex;gap:12px;align-items:flex-start;margin-top:10px}
   .preview img{width:96px;height:128px;object-fit:cover;border-radius:12px;border:1px solid var(--line);background:#fff;flex:none}
   .chip{display:inline-flex;gap:6px;align-items:center;background:var(--chip);border-radius:999px;padding:5px 11px;font-size:14px}
@@ -82,9 +105,12 @@
     </div>
     <div class="grid" id="samples"></div>
     <div class="preview" id="garmentPreviewBox" hidden>
-      <img id="garmentPreview" alt="Selected garment"/>
+      <button type="button" class="zoomable" id="garmentZoom" aria-label="Look closer at the garment">
+        <img id="garmentPreview" alt="Selected garment"/><span class="zoomhint" aria-hidden="true">🔍</span>
+      </button>
       <div style="flex:1;min-width:0">
         <div id="garmentName" style="font-weight:600"></div>
+        <button type="button" class="linkbtn" id="garmentZoomLink">🔍 Zoom in to see the details</button>
         <div class="row">
           <select id="category" aria-label="Garment type">
             <option value="tops">Top / jacket</option>
@@ -181,12 +207,18 @@
         <button class="btn primary" id="liveStart" type="button">Start live</button>
         <button class="btn" id="liveStop" type="button" disabled>Stop</button>
         <button class="btn" id="liveFlip" type="button">↺ Front/back</button>
+        <button class="btn" id="liveSnap" type="button" disabled>📸 Save photo</button>
+        <span id="recDot" class="rec" hidden>● REC</span>
         <span id="timer" class="stats"></span>
       </div>
       <div class="stats" id="liveStats"></div>
       <p id="liveStatus" role="status"></p>
-      <div class="row" id="videoActions" hidden>
-        <a class="btn" id="saveVideo" download="try-on-live.webm">⬇ Download video</a>
+      <div id="videoActions" hidden>
+        <video id="recPreview" controls playsinline muted></video>
+        <div class="row">
+          <a class="btn primary" id="saveVideo" download="try-on-live.webm">⬇ Download video</a>
+          <span class="stats" id="videoInfo"></span>
+        </div>
       </div>
     </div>
   </section>
@@ -197,6 +229,30 @@
       <span>Save my photos and videos to help improve the try-on (I'm 18 or older). Try-on works either way.</span>
     </label>
   </section>
+
+  <!-- Owner only: shown when the page is opened with ?admin=<gallery token>. -->
+  <section class="card" id="costCard" hidden aria-labelledby="cost-h">
+    <h2 id="cost-h">💰 GPU costs <span class="tag">owner only</span></h2>
+    <div class="costtiles" id="costTiles"></div>
+    <h3 class="costh">Where the money goes (all GPU sessions)</h3>
+    <div class="tablewrap"><table class="costtable" id="costSplit"></table></div>
+    <h3 class="costh">Recent GPU sessions (wake → sleep)</h3>
+    <div class="tablewrap"><table class="costtable" id="costSessions"></table></div>
+    <p class="muted" id="costNote"></p>
+  </section>
+</div>
+<div class="overlay" id="zoom" hidden role="dialog" aria-modal="true" aria-label="Zoomed picture">
+  <div class="zoombox">
+    <div class="zoomstage" id="zoomStage"><img id="zoomImg" alt="" draggable="false"/></div>
+    <div class="zoombar">
+      <button class="btn" id="zoomOut" type="button" aria-label="Zoom out">−</button>
+      <span class="stats" id="zoomPct">100%</span>
+      <button class="btn" id="zoomIn" type="button" aria-label="Zoom in">+</button>
+      <button class="btn" id="zoomFit" type="button">Fit</button>
+      <span class="zoomtitle" id="zoomTitle"></span>
+      <button class="btn" id="zoomClose" type="button" aria-label="Close">✕</button>
+    </div>
+  </div>
 </div>
 <div class="overlay" id="wake" hidden role="dialog" aria-modal="true" aria-labelledby="wakeTitle">
   <div class="sheet">
@@ -212,6 +268,6 @@
     <div class="row" style="justify-content:flex-end;margin-bottom:0"><button class="btn" id="wakeCancel" type="button">Cancel</button></div>
   </div>
 </div>
-<script type="module" src="/app.js?v=dc289d67f032"></script>
+<script type="module" src="/app.js?v=ae054c1cd772"></script>
 </body>
 </html>

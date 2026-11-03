@@ -244,3 +244,38 @@ Rules we follow:
   - white henley shirt on a seated man;
   - pink sharara set on a woman wearing a sharara set.
 - **Live default changed to our GPU engine.** It repaints only the garment area on the real camera picture, so the person and background are untouched. The hosted engine redraws the whole frame; it is still available with `?engine=hosted` or `LIVE_DEFAULT_ENGINE=hosted`.
+
+### 17:25 — Owner asked about Decart, the "AI Generated" badge, hands, models in use, and live video download
+- **Badge and broken hands come from Decart.** The live test ran on the hosted Decart engine, which was still the default on the deployed site. It burns an "AI Generated" badge into the video and redraws the whole frame, which spoiled the thumb and collar.
+- **Hosted live engine now off** by default (`HOSTED_LIVE_ENABLED=false`). The site never calls Decart, even with `?engine=hosted`. Provider names are removed from `/health` and `/config` (they now show a neutral `live_engine`).
+- **Photo: shopper's own hands kept,** plus anything held next to them (phone, purse); the parser's "hands" label and nearby non-body pixels are excluded from the paste mask.
+- **Photo: model runs on a crop around the person,** grown to 2:3 with room for drapes. Full-length photos get about twice as many model pixels on the garment, giving a sharper print and fewer smears.
+- **Live: hands stay visible over the garment.** A hand that moves in front after a keyframe is detected (change from the keyframe plus skin colour), so the garment is not painted over it.
+  - Synthetic test: hand kept in 10 of 10 frames, and the garment still shown elsewhere.
+  - Existing live test: 95% of the shirt dressed while moving.
+- **Live recording:** pulsing ● REC while live, **📸 Save photo** at any moment, and after Stop a video player with **⬇ Download video** showing length and size. Tested in a phone browser: photo and WebM downloaded.
+- **Real GPU test on the branch (17:47–17:57, then stopped):**
+  - Wake took 339 s.
+  - 5 try-ons in 12–27 s. Hands, rings, watch, bangles and the hand on the railing are pixel-identical to the originals; only the outfit changed.
+  - Known limit: going from a saree to a kurta set left a strip of the old saree hem at the feet. That is FASHN's own output.
+- **Live-site GPU** fell asleep by itself at 17:35 after 15 idle minutes, as designed.
+- **Licence finding:** fashn-human-parser inherits NVIDIA's SegFormer licence, which is **non-commercial**. It needs replacing before commercial use; proposed replacement is MediaPipe segmentation plus hand tracking (Apache-2.0). Everything else in the stack is commercially licensed.
+- Full explanation in the Project doc `claude/HOW-IT-WORKS.md`, kept out of the public repo.
+
+### 17:45 — Owner: sleep after 2 idle minutes, zoom on garments, show balance and costs per session
+- PR #9 was merged with only the collection commit. The hands, crop, Decart-off and recording commits are going out in the next PR.
+- **2-minute sleep** (`GPU_IDLE_MINUTES=2`; the installer migrates an existing `15` to `2`):
+  - The site's guard checks every 20 s. The GPU counts as idle only when all three hold: no shopper request, no open live session, and no work on the GPU. The worker reports this as `idle_s` from its keepalive file.
+  - The idle timer starts when the GPU is ready, not at boot.
+  - The GPU's own watchdog is now a backup at idle + 3 min.
+  - Simulator: the GPU stopped after 62 s with a 1-minute limit.
+- **Zoom viewer** for the selected garment, the shopper's photo and the result:
+  - opens from a 🔍 badge or the "Zoom in" link;
+  - zoom with +/− buttons, mouse wheel, pinch or double-tap; drag to pan; Fit; Esc to close.
+  - Phone-browser test: 100% → 225% → Fit → closed, with no errors.
+- **Owner-only cost panel** at the bottom of the page, shown with `?admin=<gallery token>`. The token is kept in the tab and removed from the address bar.
+  - It shows: RunPod balance, spend today and all time, charge rate right now, storage per month, and the idle setting.
+  - **Split by type:** photo, live, fit estimate, wake-up and idle, each with count, GPU time, cost and average.
+  - **Sessions:** the last 30 GPU sessions, with GPU type, price per hour and cost by type.
+  - Backed by a per-session ledger, `gpu_usage.json`, next to the GPU state file, and served by `GET /admin/api/costs`.
+- **Found:** RunPod is charging **$0.071/h, about $51/month, while everything is asleep.** Most of it (about $48/month) is the 80 GB disks of 3 old stopped `vto-dev` pods from the first setup, which are no longer needed. The models volume is about $2.80/month. Deleting those pods needs the owner's OK.
