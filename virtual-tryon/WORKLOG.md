@@ -190,3 +190,37 @@ Rules we follow:
 - End-to-end through the public link (phone-emulated browser): AI estimate,
   4K photo saved for training, live ~10 fps / ~0.2 s delay (test camera),
   video download, admin gallery with sessions and videos. No page errors.
+
+## 2026-11-03 (evening): the main site, GPU on demand
+
+### Owner asked: run on https://live-virtual-try-on.brandzaha.com, wake the GPU only on try-on, loader with time estimate
+- **Site (VPS):** new Python site on 127.0.0.1:3071 next to the current Node app (3070, untouched).
+  - `deploy/setup-v2.sh` installs it and switches nginx to it, keeping a backup.
+  - `deploy/rollback-v2.sh` switches back.
+  - Settings live in `/etc/live-virtual-try-on-v2.env`; the RunPod key is asked for with hidden input.
+- **GPU wake** (`server/gpu_pool.py`), on *Try it on*:
+  1. Resume our stopped GPU box.
+  2. If its GPU is taken, start a fresh box on the same network volume, looking for a free GPU for up to 3 minutes.
+  3. A failed wake stops the box.
+- **GPU sleep:**
+  - The box stops itself after 15 idle minutes.
+  - The site's guard stops it if it is unhealthy or unused for 25 minutes.
+  - Limits: 6 wakes per visitor per hour, 200 per day.
+- **Loader:** "Warming up the try-on engine", with a bar, time left (median of real wake-ups) and 3 steps; Cancel.
+- **Fast-booting GPU boxes:** a self-contained Python 3.12 env (PyTorch 2.8 cu128, FASHN, onnxruntime-gpu 1.22, OpenCV 5, transformers 5) is built once onto network volume `07gwbgb8fj` with `scripts/build_env.sh`. Boxes boot from the ~45 MB `python:3.12-slim` image, where the big CUDA image took 9+ minutes to download on a new machine.
+  - Build: one L4 at $0.59/hr, 16:01–16:49 IST, then stopped.
+  - The env is 12 GB.
+
+### 16:53–17:05 — Real tests (local copy of the site in GPU mode, real RunPod)
+- **Wake from zero:** 373 s. Waiting for a free GPU in EU-RO-1 took 150 s, starting 16 s, loading models ~200 s. Got an RTX 4090.
+- **Photo through the site:** 2560×3840 in 21 s (first), then 12 s. Clean result.
+- **Fit estimate:** male 99.9%, 2.6 s.
+- **Sleep then wake:** resume was refused because the 4090 on that host was taken within 2 minutes. A fresh box started automatically: ready in 347 s (search 90 s, start 60 s, load ~190 s).
+- **Phone-emulated browser test on the site:**
+  - AI estimate; 4K photo saved for training.
+  - Live on our GPU at 10 fps with 191 ms delay; video download offered.
+  - Gallery shows 2 sessions and 1 video. No page errors.
+- Wake estimates updated to match (any 330 s, create 360 s, resume 240 s). They switch to the real median once the site has history.
+- All test GPUs stopped (`xf2a30tmkzxhny`, `lsz70xp9ydj40a` cleaned up by the site, `z14q2aclblm2ft`).
+- PR #8 opened (PR #7 was merged by the owner earlier).
+- Next speed-up idea: model loading from the network volume (~190 s) is now the biggest part of a cold start.
