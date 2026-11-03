@@ -70,6 +70,9 @@ class Settings(BaseSettings):
     gpu_idle_minutes: int = 2             # sleep after this many minutes with no try-on
     gpu_git_branch: str = "main"
     gpu_wake_timeout: int = 600
+    # A new machine that hasn't started its container in this time (stuck image
+    # download) is dropped and another one is tried, once.
+    gpu_boot_timeout: int = 180
     gpu_wakes_per_ip_per_hour: int = 6
     gpu_daily_wake_limit: int = 200
     gpu_cleanup_superseded: bool = True

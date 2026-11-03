@@ -455,10 +455,29 @@ class GpuPool:
                 self._live.pop("note", None)
                 self._live["stage"] = STAGES["boot"]
                 deadline = t0 + settings.gpu_wake_timeout
+                boot_by, retries = time.time() + settings.gpu_boot_timeout, 1
                 while time.time() < deadline:
                     pod = await self._pod(c)
                     if pod and (pod.get("runtime") or {}).get("uptimeInSeconds"):
                         break
+                    if time.time() > boot_by and retries and deadline - time.time() > 240:
+                        retries -= 1  # this machine is stuck: try another one
+                        old = self.pod_id
+                        log.warning("GPU %s didn't start in %ss; trying another machine", old,
+                                    settings.gpu_boot_timeout)
+                        await self._stop(c)
+                        self._live.update(stage=STAGES["request"], note="Trying another GPU…")
+                        kind = "create"
+                        self._state["pod_id"] = await self._create_any(c)
+                        self._save()
+                        self._begin_session("create")
+                        try:
+                            await c.delete(f"{settings.runpod_rest_url}/pods/{old}", headers=self._auth())
+                        except Exception:
+                            pass
+                        self._live.pop("note", None)
+                        self._live["stage"] = STAGES["boot"]
+                        boot_by = time.time() + settings.gpu_boot_timeout
                     await asyncio.sleep(3)
                 self._live["stage"] = STAGES["models"]
                 while time.time() < deadline:
