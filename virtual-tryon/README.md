@@ -63,10 +63,12 @@ session can pick up the work with no other context.
 | Garment prep automation | working | yes |
 | Rate/spend limits | working | yes |
 | Consent + recording | working | yes |
-| Photo try-on API wiring | working (needs model download) | model download needs GPU to be useful |
+| Photo try-on (FASHN v1.5) + 4K composite | code done; 4K composite CPU-tested (face/background pixel-identical, 1080p → 2880×3840); FASHN install on GPU pending approval | composite yes, model needs GPU |
+| GPU photo worker (`gpu/worker.py`) | written, token-auth; runs on pod :8000 | needs GPU |
 | Web demo client | working | yes |
 | Decart live backend (white-label) | working: scoped keys minted server-side, browser live client wired (needs `DECART_API_KEY`) | yes |
-| `local` live engine | scaffold + wiring notes | needs GPU |
+| `local` live engine (keyframe try-on + tracking, WebRTC) | working end-to-end with a stand-in model: browser → engine → dressed video, ~28 fps, session cap + signed tickets; tracking keeps 95% of a moving garment dressed | real model needs GPU |
+| TURN relay for live from real networks | not yet (coturn on the VPS) | yes |
 | FlashVSR sharpening | scaffold + wiring notes | needs GPU |
 
 Nothing here is faked. GPU parts are real skeletons with exact wiring

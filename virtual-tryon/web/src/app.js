@@ -124,6 +124,80 @@ const END_REASONS = {
   policy_violation: "The session was refused.",
 };
 
+// Hosted backend: realtime SDK with the scoped short-lived key.
+async function connectDecart(data, keepStream) {
+  const model = models.realtime(data.model);
+  const stream = await navigator.mediaDevices.getUserMedia({
+    audio: false,
+    video: { facingMode: "user", width: { ideal: model.width }, height: { ideal: model.height }, frameRate: model.fps },
+  });
+  keepStream(stream);
+  $("#cam").srcObject = stream;
+  // The scoped key is the only credential this page ever sees.
+  const client = createDecartClient({ apiKey: data.client_token });
+  setStatus("Connecting…");
+  const session = await client.realtime.connect(stream, {
+    model,
+    mirror: true,
+    onRemoteStream: (remote) => {
+      $("#out").srcObject = remote;
+      $("#out").hidden = false;
+    },
+    onCapacityWait: ({ retryAfterMs }) => setStatus(`Busy. Retrying in ${Math.round(retryAfterMs / 1000)}s…`),
+  });
+  live = { session, pc: null, stream, sessionId: data.session_id, timer: null };
+  session.on("connectionChange", (s) => {
+    if (s === "reconnecting") setStatus("Connection dropped. Reconnecting…");
+    else if (s === "disconnected" && live) stopLive("Disconnected.");
+  });
+  session.on("sessionEnded", ({ reason }) => stopLive(END_REASONS[reason] || "The session ended.", "error"));
+  session.on("error", (err) => console.warn("[live]", err));
+}
+
+const blobToB64 = (blob) => new Promise((ok, bad) => {
+  const r = new FileReader();
+  r.onload = () => ok(String(r.result).split(",")[1]);
+  r.onerror = bad;
+  r.readAsDataURL(blob);
+});
+
+// Our own GPU engine: plain WebRTC to the engine with a signed ticket.
+async function connectLocal(data, keepStream) {
+  const stream = await navigator.mediaDevices.getUserMedia({
+    audio: false, video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 }, frameRate: 30 },
+  });
+  keepStream(stream);
+  $("#cam").srcObject = stream;
+  setStatus("Connecting…");
+  const pc = new RTCPeerConnection({ iceServers: data.ice_servers || [] });
+  stream.getVideoTracks().forEach((t) => pc.addTrack(t, stream));
+  pc.ontrack = (e) => {
+    $("#out").srcObject = e.streams[0] || new MediaStream([e.track]);
+    $("#out").hidden = false;
+  };
+  pc.onconnectionstatechange = () => {
+    if (["failed", "disconnected"].includes(pc.connectionState) && live) stopLive("Disconnected.");
+  };
+  await pc.setLocalDescription(await pc.createOffer());
+  await new Promise((done) => {  // send one complete offer (engine doesn't trickle)
+    if (pc.iceGatheringState === "complete") return done();
+    const t = setTimeout(done, 3000);
+    pc.onicegatheringstatechange = () => pc.iceGatheringState === "complete" && (clearTimeout(t), done());
+  });
+  const res = await fetch(`${data.engine_url}/offer`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      sdp: pc.localDescription.sdp, type: pc.localDescription.type, ticket: data.ticket,
+      garment_b64: await blobToB64(await toJpeg($("#garment").files[0])), category: $("#category").value,
+    }),
+  });
+  if (!res.ok) { pc.close(); throw new Error(res.status === 429 ? "Live try-on is busy. Try again in a minute." : "Couldn't connect to live try-on."); }
+  const ans = await res.json();
+  await pc.setRemoteDescription({ sdp: ans.sdp, type: ans.type });
+  live = { session: null, pc, stream, sessionId: data.session_id, timer: null };
+}
+
 async function startLive() {
   if (starting || live) return;
   if (!$("#garment").files[0]) return setStatus("Pick a garment first.", "error");
@@ -135,34 +209,9 @@ async function startLive() {
   try {
     setStatus("Starting…");
     data = await mintSession();
-    if (data.backend !== "decart") throw new Error("This live engine isn't connected to the page yet.");
-    const model = models.realtime(data.model);
     closePreview();
-    stream = await navigator.mediaDevices.getUserMedia({
-      audio: false,
-      video: { facingMode: "user", width: { ideal: model.width }, height: { ideal: model.height }, frameRate: model.fps },
-    });
-    $("#cam").srcObject = stream;
-
-    // The scoped key is the only credential this page ever sees.
-    const client = createDecartClient({ apiKey: data.client_token });
-    setStatus("Connecting…");
-    const session = await client.realtime.connect(stream, {
-      model,
-      mirror: true,
-      onRemoteStream: (remote) => {
-        $("#out").srcObject = remote;
-        $("#out").hidden = false;
-      },
-      onCapacityWait: ({ retryAfterMs }) => setStatus(`Busy. Retrying in ${Math.round(retryAfterMs / 1000)}s…`),
-    });
-    live = { session, stream, sessionId: data.session_id, timer: null };
-    session.on("connectionChange", (s) => {
-      if (s === "reconnecting") setStatus("Connection dropped. Reconnecting…");
-      else if (s === "disconnected" && live) stopLive("Disconnected.");
-    });
-    session.on("sessionEnded", ({ reason }) => stopLive(END_REASONS[reason] || "The session ended.", "error"));
-    session.on("error", (err) => console.warn("[live]", err));
+    if (data.backend === "decart") await connectDecart(data, (st) => (stream = st));
+    else await connectLocal(data, (st) => (stream = st));
 
     let left = data.max_seconds;
     $("#timer").textContent = `${left}s left`;
@@ -171,7 +220,8 @@ async function startLive() {
       $("#timer").textContent = left > 0 ? `${left}s left` : "";
       if (left <= 0) stopLive("Time's up. Press Live try-on to go again.");
     }, 1000);
-    await applyGarment();
+    if (live.session) await applyGarment();
+    else setStatus("Live. Step back so your upper body is in frame.", "ok");
   } catch (err) {
     stream?.getTracks().forEach((t) => t.stop());
     if (data?.session_id && !live) endSessionOnServer(data.session_id);
@@ -184,10 +234,11 @@ async function startLive() {
 
 function stopLive(message = "Stopped.", tone = "") {
   if (live) {
-    const { session, stream, sessionId, timer } = live;
+    const { session, pc, stream, sessionId, timer } = live;
     live = null;
     clearInterval(timer);
-    try { session.disconnect(); } catch {}
+    try { session?.disconnect(); } catch {}
+    try { pc?.close(); } catch {}
     stream.getTracks().forEach((t) => t.stop());
     endSessionOnServer(sessionId);
   }
@@ -205,7 +256,10 @@ $("#liveBtn").onclick = async () => {
   if (live) $("#stopBtn").disabled = false;
 };
 $("#stopBtn").onclick = () => stopLive();
-$("#garment").onchange = () => { if (live) applyGarment(); };
+$("#garment").onchange = () => {
+  if (live?.session) applyGarment();
+  else if (live?.pc) setStatus("Stop and start again to try a different garment.");
+};
 
 // Live is billed per second: end it when the tab goes away.
 document.addEventListener("visibilitychange", () => { if (document.hidden && live) stopLive("Stopped because the tab was hidden."); });
