@@ -1,12 +1,15 @@
-"""GPU worker: runs ON the RunPod box, behind RunPod's HTTPS proxy.
+"""GPU worker: runs ON the RunPod box, started by scripts/pod_boot.sh.
 
   uvicorn gpu.worker:app --host 0.0.0.0 --port 8000
 
-The VPS server calls it with GPU_WORKER_URL=https://<pod>-8000.proxy.runpod.net
-and GPU_WORKER_TOKEN (shared secret). Shoppers never talk to it directly.
+The site (VPS) wakes this box on demand and calls it over RunPod's HTTPS proxy
+(https://<pod-id>-8000.proxy.runpod.net) with WORKER_TOKEN. Browsers only reach
+/live/ws, with a short-lived ticket signed by the site (ENGINE_SECRET).
 
-  GET  /health   model/GPU status (no auth, no secrets)
-  POST /photo    person + garment -> 4K JPEG   (Bearer token)
+  GET  /health    model status (no secrets)
+  POST /photo     person + garment -> 4K JPEG             (Bearer WORKER_TOKEN)
+  POST /analyze   person photo -> person found + estimate (Bearer WORKER_TOKEN)
+  WS   /live/ws   live try-on frames                      (signed ticket)
 """
 from __future__ import annotations
 
@@ -18,18 +21,20 @@ import threading
 import time
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile, WebSocket
 from fastapi.responses import Response
 from starlette.concurrency import run_in_threadpool
 
-from pipeline import photo_tryon
+from pipeline import person_analysis, photo_tryon
+from server import live_ws
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 log = logging.getLogger("tryon.worker")
 
 TOKEN = os.environ.get("WORKER_TOKEN", "")
 KEEPALIVE = Path(os.environ.get("KEEPALIVE", "/workspace/.keepalive"))
-_GPU_LOCK = threading.Lock()  # one generation at a time on one GPU
+_GPU_LOCK = threading.Lock()  # one photo generation at a time on one GPU
+_READY = {"clip": False}
 
 app = FastAPI(title="VTO GPU worker", docs_url=None, redoc_url=None)
 
@@ -42,11 +47,27 @@ def _auth(authorization: str | None) -> None:
         raise HTTPException(401, "bad token")
 
 
+def _touch() -> None:
+    try:
+        KEEPALIVE.touch(exist_ok=True)  # real work = not idle (watchdog)
+    except OSError:
+        pass
+
+
 @app.on_event("startup")
 def warm():
-    if photo_tryon._available():
-        photo_tryon.load()
-        photo_tryon.load_upscaler()
+    def go():
+        try:
+            if photo_tryon._available():
+                photo_tryon.load()
+                photo_tryon.load_upscaler()
+                photo_tryon.load_parser()
+            if person_analysis.available():
+                person_analysis._load()
+                _READY["clip"] = True
+        except Exception:
+            log.exception("warm-up failed")
+    threading.Thread(target=go, daemon=True).start()
 
 
 @app.get("/health")
@@ -58,14 +79,14 @@ def health():
             gpu = torch.cuda.get_device_name(0)
     except Exception:
         pass
-    return {"ok": True, "gpu": gpu, "weights": photo_tryon._available(),
-            "model_loaded": photo_tryon._PIPE is not None,
-            "esrgan": bool(photo_tryon._UPSCALER)}
+    loaded = photo_tryon._PIPE is not None and photo_tryon._PARSER is not None
+    return {"ok": True, "gpu": gpu, "weights": photo_tryon._available(), "model_loaded": loaded,
+            "esrgan": bool(photo_tryon._UPSCALER), "clip": _READY["clip"]}
 
 
 def _photo_sync(p: bytes, g: bytes, category: str, gpt: str, quality: str, tls: int | None):
     with _GPU_LOCK:
-        KEEPALIVE.touch(exist_ok=True)  # real work = not idle (watchdog)
+        _touch()
         return photo_tryon.run_local(p, g, category, garment_photo_type=gpt,
                                      quality=quality, target_long_side=tls)
 
@@ -85,3 +106,26 @@ async def photo(person: UploadFile = File(...), garment: UploadFile = File(...),
     info["wall_s"] = round(time.time() - t, 2)
     log.info("photo %s", info)
     return Response(img, media_type="image/jpeg", headers={"x-tryon-info": json.dumps(info)})
+
+
+def _analyze_sync(data: bytes) -> dict:
+    _touch()
+    res = person_analysis.analyze(data)
+    visible = photo_tryon.person_visible(data)
+    if visible is not None:
+        res["person_found"] = visible
+    if not res["person_found"]:
+        res.update(gender="unsure", confidence=0.0)
+    return res
+
+
+@app.post("/analyze")
+async def analyze(image: UploadFile = File(...), authorization: str | None = Header(None)):
+    _auth(authorization)
+    return {"available": True, **(await run_in_threadpool(_analyze_sync, await image.read()))}
+
+
+@app.websocket("/live/ws")
+async def live(ws: WebSocket):
+    _touch()
+    await live_ws.handle(ws)

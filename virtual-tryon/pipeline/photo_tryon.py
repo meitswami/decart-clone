@@ -116,6 +116,17 @@ def load_parser():
     return _PARSER or None
 
 
+def person_visible(image_bytes: bytes) -> bool | None:
+    """Is a person in this photo? (human parser). None if the parser is unavailable."""
+    parser = load_parser()
+    if parser is None:
+        return None
+    import numpy as np
+    img = ImageOps.exif_transpose(Image.open(io.BytesIO(image_bytes))).convert("RGB")
+    lab = parser.predict(img)
+    return bool(np.isin(lab, [1, 2, 12, 13, 16]).mean() > 0.02)  # face, hair, arms, hands, torso
+
+
 def detect_garment_photo_type(garment) -> str:
     """'model' if a person is visible in the garment photo (face/arms/hands/legs),
     else 'flat-lay'. Picking the wrong one makes the model blend the wearer's
@@ -185,14 +196,15 @@ def run_local(person_bytes: bytes, garment_bytes: bytes, category: str = "tops",
     return buf.getvalue(), info
 
 
-def run_remote(person_bytes: bytes, garment_bytes: bytes, category: str, **opts) -> tuple[bytes, dict]:
+def run_remote(person_bytes: bytes, garment_bytes: bytes, category: str, *,
+               url: str | None = None, token: str | None = None, **opts) -> tuple[bytes, dict]:
     import json
 
     import httpx
     files = {"person": ("person.jpg", person_bytes), "garment": ("garment.jpg", garment_bytes)}
     data = {"category": category, **{k: str(v) for k, v in opts.items() if v is not None}}
-    r = httpx.post(f"{GPU_WORKER_URL}/photo", files=files, data=data, timeout=180,
-                   headers={"Authorization": f"Bearer {GPU_WORKER_TOKEN}",
+    r = httpx.post(f"{(url or GPU_WORKER_URL).rstrip('/')}/photo", files=files, data=data, timeout=240,
+                   headers={"Authorization": f"Bearer {token or GPU_WORKER_TOKEN}",
                             "User-Agent": "vto-server/1.0"})
     r.raise_for_status()
     return r.content, json.loads(r.headers.get("x-tryon-info", "{}"))

@@ -115,13 +115,16 @@ async function setPerson(blob, source) {
   $("#personPreview").src = state.personUrl;
   $("#personPreviewBox").hidden = false;
   $("#genderChoice").value = "";
-  if (!cfg.analysis_ready) return;
+  if (cfg.analysis_ready) analyzePerson(blob);
+}
+async function analyzePerson(blob) {
   $("#genderBox").hidden = false;
   $("#genderText").textContent = "checking…";
   try {
     const fd = new FormData();
     fd.append("image", await toJpeg(blob, 768, 0.9), "person.jpg");
     const r = await (await fetch("/analyze/person", { method: "POST", body: fd })).json();
+    if (r.asleep) { $("#genderText").textContent = "shown with your result"; return; }
     if (!r.available) { $("#genderBox").hidden = true; return; }
     state.gender = r;
     if (!r.person_found) $("#genderText").textContent = "no person found. Try another photo";
@@ -160,14 +163,59 @@ $("#snapBtn").onclick = () => {
   c.toBlob((b) => { setPerson(b, "webcam"); closeWebcam(); }, "image/jpeg", 0.95);
 };
 
+// ---------- GPU wake-up (servers sleep when idle) ----------
+const ENGINE = new URLSearchParams(location.search).get("engine") || ""; // ?engine=gpu → our GPU live engine
+let wakeCancelled = false;
+$("#wakeCancel").onclick = () => { wakeCancelled = true; };
+const fmtSecs = (s) => (s >= 90 ? `about ${Math.round(s / 60)} min` : `about ${Math.max(5, Math.round(s / 5) * 5)} s`);
+
+async function ensureGpu() {
+  if (cfg.gpu_mode !== "runpod") return;
+  let st = await (await fetch("/gpu/status", { cache: "no-store" })).json().catch(() => ({}));
+  if (st.state === "ready") return;
+  st = await (await fetch("/gpu/wake", { method: "POST" })).json().catch(() => ({ state: "unavailable" }));
+  if (st.state === "ready") return;
+  wakeCancelled = false;
+  $("#wake").hidden = false;
+  const t0 = performance.now();
+  try {
+    while (true) {
+      if (wakeCancelled) throw new Error("Cancelled. Press the button again when you're ready.");
+      if (st.state === "unavailable") throw new Error(st.message || "The try-on servers are busy. Please try again shortly.");
+      if (st.state === "ready") break;
+      const eta = st.eta_s || 120;
+      const el = Math.max(st.elapsed_s || 0, (performance.now() - t0) / 1000);
+      $("#wakeBar").style.width = `${Math.min(95, (el / eta) * 100).toFixed(0)}%`;
+      const left = eta - el;
+      $("#wakeEta").textContent = left > 3 ? `${fmtSecs(left)} left` : "Almost there…";
+      let passed = true;
+      for (const li of document.querySelectorAll("#wakeSteps li")) {
+        const on = li.dataset.s === st.stage;
+        if (on) passed = false;
+        li.className = on ? "on" : passed ? "done" : "";
+      }
+      await new Promise((r) => setTimeout(r, 2000));
+      st = await (await fetch("/gpu/status", { cache: "no-store" })).json().catch(() => st);
+      if (st.state === "asleep") st = await (await fetch("/gpu/wake", { method: "POST" })).json().catch(() => st);
+    }
+    $("#wakeBar").style.width = "100%";
+    $("#wakeEta").textContent = "Ready!";
+    document.querySelectorAll("#wakeSteps li").forEach((li) => (li.className = "done"));
+    await new Promise((r) => setTimeout(r, 500));
+  } finally {
+    $("#wake").hidden = true;
+  }
+}
+
 // ---------- photo try-on ----------
 $("#tryBtn").onclick = async () => {
   const st = $("#photoStatus");
   if (!state.garment) return status(st, "Pick a garment first (step 1).", "error");
   if (!state.person) return status(st, "Add a photo of yourself first.", "error");
   $("#tryBtn").disabled = true;
-  status(st, cfg.photo_model_ready ? "Dressing you… (about 5–20 s)" : "Running (stand-in model: real model not installed yet)…", "", true);
   try {
+    await ensureGpu();
+    status(st, cfg.photo_model_ready ? "Dressing you… (about 5–20 s)" : "Running (stand-in model: real model not installed yet)…", "", true);
     const fd = new FormData();
     fd.append("person", await toJpeg(state.person.blob, 4096, 0.95), "person.jpg");
     fd.append("garment", await toJpeg(state.garment.blob, 1600, 0.95), "garment.jpg");
@@ -179,7 +227,11 @@ $("#tryBtn").onclick = async () => {
     fd.append("gender_estimate", state.gender?.gender || "");
     fd.append("gender_choice", $("#genderChoice").value);
     fd.append("source", state.person.source);
-    const res = await fetch("/photo/tryon", { method: "POST", body: fd });
+    let res = await fetch("/photo/tryon", { method: "POST", body: fd });
+    if (res.status === 503 && (await res.clone().json().catch(() => ({}))).error === "gpu_asleep") {
+      await ensureGpu();
+      res = await fetch("/photo/tryon", { method: "POST", body: fd });
+    }
     if (!res.ok) {
       const j = await res.json().catch(() => ({}));
       throw new Error(j.message || `Something went wrong (HTTP ${res.status}).`);
@@ -199,6 +251,7 @@ $("#tryBtn").onclick = async () => {
     $("#resultInfo").textContent = `${img.width}×${img.height} · ${res.headers.get("X-Tryon-Seconds") || "?"} s${saved}`;
     img.close?.();
     status(st, "Done.", "ok");
+    if (!state.gender && cfg.analysis_ready) analyzePerson(state.person.blob); // GPU is awake now
     $("#resultBox").scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (e) {
     status(st, e.message || String(e), "error");
@@ -233,9 +286,14 @@ async function mintSession() {
   fd.append("store_id", STORE_ID);
   fd.append("consented", String(consented()));
   fd.append("is_adult", String(consented()));
+  if (ENGINE) fd.append("engine", ENGINE);
   const headers = {};
   if (cfg.access_code_required) headers["x-access-code"] = $("#code").value.trim();
-  const res = await fetch("/live/token", { method: "POST", body: fd, headers });
+  let res = await fetch("/live/token", { method: "POST", body: fd, headers });
+  if (res.status === 503 && (await res.clone().json().catch(() => ({}))).error === "gpu_asleep") {
+    await ensureGpu();
+    res = await fetch("/live/token", { method: "POST", body: fd, headers });
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.message || `Couldn't start (HTTP ${res.status}).`);
   return data;
@@ -280,6 +338,19 @@ function finishRecorder(r, trialId, upload) {
       fd.append("video", blob, `video.${ext}`);
       fetch("/captures/video", { method: "POST", body: fd }).catch(() => {});
     }
+  };
+  try { r.rec.stop(); } catch {}
+}
+
+function finishCameraRecorder(r, trialId) {
+  r.rec.onstop = () => {
+    const blob = new Blob(r.chunks, { type: r.mimeType.split(";")[0] });
+    if (!blob.size || !trialId) return;
+    const fd = new FormData();
+    fd.append("trial_id", trialId);
+    fd.append("kind", "camera");
+    fd.append("video", blob, r.mimeType.includes("mp4") ? "camera.mp4" : "camera.webm");
+    fetch("/captures/video", { method: "POST", body: fd }).catch(() => {});
   };
   try { r.rec.stop(); } catch {}
 }
@@ -404,7 +475,8 @@ async function connectHosted(data) {
     onRemoteStream: (remote) => { vid.srcObject = remote; vid.hidden = false; $("#liveOut").hidden = true; },
     onCapacityWait: ({ retryAfterMs }) => lstat(`Busy. Retrying in ${Math.round(retryAfterMs / 1000)}s…`),
   });
-  live = { kind: "hosted", session, stream, sessionId: data.session_id, timer: null, recorder: null };
+  live = { kind: "hosted", session, stream, sessionId: data.session_id, trialId: data.trial_id, timer: null,
+           recorder: null, upload: false, camRecorder: data.record ? startRecorder(stream) : null };
   session.on("connectionChange", (st) => { if (st === "disconnected" && live) stopLive("Disconnected."); });
   session.on("sessionEnded", () => stopLive("The session ended.", "error"));
   await session.set({ image: await toJpeg(state.garment.blob, 1200), enhance: true });
@@ -453,6 +525,7 @@ function stopLive(message = "Stopped.", tone = "") {
     clearInterval(s.timer);
     clearInterval(s.statsTimer);
     finishRecorder(s.recorder, s.trialId, s.upload && s.kind === "ws");
+    if (s.camRecorder) finishCameraRecorder(s.camRecorder, s.trialId);
     try { s.ws?.close(); } catch {}
     try { s.pc?.close(); } catch {}
     try { s.session?.disconnect(); } catch {}

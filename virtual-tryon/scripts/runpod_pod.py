@@ -76,10 +76,13 @@ def status() -> list[dict]:
 # Preferred GPUs, best value first. All are Ada/Blackwell/Ampere with >=24 GB.
 GPU_PRIORITY = [
     "NVIDIA GeForce RTX 4090",
-    "NVIDIA RTX 6000 Ada Generation",
-    "NVIDIA L40S",
     "NVIDIA GeForce RTX 5090",
+    "NVIDIA L40S",
+    "NVIDIA RTX 6000 Ada Generation",
     "NVIDIA RTX A6000",
+    "NVIDIA A40",
+    "NVIDIA L4",
+    "NVIDIA RTX PRO 6000 Blackwell Server Edition",
 ]
 
 
@@ -89,7 +92,8 @@ DC_PRIORITY = ["AP-IN-1", "AP-IN-2", "AP-IN-3", "SEA-SG-1", "AP-JP-1",
 
 
 def create_rest(env: dict[str, str], cloud: str = "SECURE", gpus: list[str] | None = None,
-                datacenters: list[str] | None = None) -> dict:
+                datacenters: list[str] | None = None, network_volume: str | None = None,
+                name: str | None = None, start_cmd: list[str] | None = None) -> dict:
     """Create via the REST API, which accepts a priority list of GPU types."""
     key = os.environ.get("RUNPOD_API_KEY") or sys.exit("RUNPOD_API_KEY is not set")
     body = {
@@ -102,6 +106,13 @@ def create_rest(env: dict[str, str], cloud: str = "SECURE", gpus: list[str] | No
     if datacenters:
         body["dataCenterIds"] = datacenters
         body["dataCenterPriority"] = "custom"
+    if network_volume:  # models live on a network volume: no pod disk needed
+        body["networkVolumeId"] = network_volume
+        body.pop("volumeInGb", None)
+    if name:
+        body["name"] = name
+    if start_cmd:
+        body["dockerStartCmd"] = start_cmd
     req = urllib.request.Request("https://rest.runpod.io/v1/pods", data=json.dumps(body).encode(),
                                  headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
                                           "User-Agent": "vto-pod-helper/1.0"})

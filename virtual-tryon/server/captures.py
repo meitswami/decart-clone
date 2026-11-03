@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import io
 import json
+import logging
+import queue
 import re
 import threading
 import time
@@ -24,6 +26,44 @@ from .config import settings
 
 _LOCK = threading.Lock()
 _SAFE = re.compile(r"^[a-f0-9]{32}$")
+log = logging.getLogger("tryon.captures")
+
+# On the GPU box, captures go to the site (CAPTURE_UPLOAD_URL) so everything is
+# in one gallery; uploads run in a background thread and never slow live video.
+_upq: "queue.Queue[tuple]" = queue.Queue(maxsize=1000)
+_uploader: threading.Thread | None = None
+
+
+def _upload_loop() -> None:
+    import httpx
+    with httpx.Client(timeout=30, headers={"User-Agent": "vto-worker/1.0",
+                                           "Authorization": f"Bearer {settings.worker_token}"}) as c:
+        while True:
+            trial_id, name, data, meta = _upq.get()
+            form = {"trial_id": trial_id, "name": name or "", "meta": json.dumps(meta) if meta else ""}
+            files = {"file": (name.rsplit("/", 1)[-1], data)} if data is not None else None
+            for attempt in range(3):
+                try:
+                    r = c.post(settings.capture_upload_url, data=form, files=files)
+                    if r.status_code < 500:
+                        break
+                except Exception as e:
+                    log.warning("capture upload failed (%s)", e)
+                time.sleep(2 * (attempt + 1))
+
+
+def _enqueue(trial_id: str, name: str | None, data: bytes | None, meta: dict | None) -> bool:
+    global _uploader
+    if not settings.capture_upload_url:
+        return False
+    if _uploader is None or not _uploader.is_alive():
+        _uploader = threading.Thread(target=_upload_loop, daemon=True)
+        _uploader.start()
+    try:
+        _upq.put_nowait((trial_id, name, data, meta))
+    except queue.Full:
+        log.warning("capture upload queue full; dropping %s", name)
+    return True
 
 
 def root() -> Path:
@@ -47,6 +87,8 @@ def _dir(trial_id: str, create: bool = True) -> Path:
 
 
 def update_meta(trial_id: str, **fields) -> None:
+    if _enqueue(trial_id, None, None, fields):
+        return
     with _LOCK:
         d = _dir(trial_id)
         p = d / "meta.json"
@@ -59,6 +101,8 @@ def update_meta(trial_id: str, **fields) -> None:
 def save_file(trial_id: str, name: str, data: bytes) -> None:
     if not re.match(r"^[a-z_]+(/[0-9]{6})?\.(jpg|png|webm|mp4)$", name):
         raise ValueError("bad file name")
+    if _enqueue(trial_id, name, data, None):
+        return
     p = _dir(trial_id) / name
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_bytes(data)

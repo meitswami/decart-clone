@@ -48,6 +48,15 @@
   label.consent input{width:20px;height:20px;margin-top:1px;flex:none}
   .spin{display:inline-block;width:14px;height:14px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:s .8s linear infinite;vertical-align:-2px;margin-right:6px}
   @keyframes s{to{transform:rotate(360deg)}}
+  .overlay{position:fixed;inset:0;background:rgba(10,10,14,.55);backdrop-filter:blur(4px);display:grid;place-items:center;z-index:50;padding:16px}
+  .sheet{background:var(--card);color:var(--fg);border-radius:20px;max-width:420px;width:100%;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+  .sheet h3{margin:0 0 6px;font-size:18px}
+  .bar{height:10px;border-radius:99px;background:var(--line);overflow:hidden;margin:16px 0 8px}
+  .bar>i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--accent),#db40a0);border-radius:99px;transition:width .8s ease}
+  .steps{list-style:none;padding:0;margin:14px 0 0;font-size:14px}
+  .steps li{display:flex;gap:8px;align-items:center;color:var(--muted);margin:6px 0}
+  .steps li.on{color:var(--fg);font-weight:600} .steps li.done{color:var(--ok)}
+  .dot{width:9px;height:9px;border-radius:50%;background:currentColor;flex:none}
   [hidden]{display:none!important}
 </style>
 </head>
@@ -180,6 +189,20 @@
     </label>
   </section>
 </div>
-<script type="module" src="/app.js?v=5a4c3cb11401"></script>
+<div class="overlay" id="wake" hidden role="dialog" aria-modal="true" aria-labelledby="wakeTitle">
+  <div class="sheet">
+    <h3 id="wakeTitle">Warming up the try-on engine</h3>
+    <div class="muted" id="wakeSub">Our AI servers sleep when nobody's using them. The first try-on takes a little longer; after that it's quick.</div>
+    <div class="bar"><i id="wakeBar"></i></div>
+    <div class="stats" id="wakeEta">Estimating…</div>
+    <ul class="steps" id="wakeSteps">
+      <li data-s="Finding a free GPU"><span class="dot"></span>Finding a free GPU</li>
+      <li data-s="Starting the GPU"><span class="dot"></span>Starting the GPU</li>
+      <li data-s="Loading the AI models"><span class="dot"></span>Loading the AI models</li>
+    </ul>
+    <div class="row" style="justify-content:flex-end;margin-bottom:0"><button class="btn" id="wakeCancel" type="button">Cancel</button></div>
+  </div>
+</div>
+<script type="module" src="/app.js?v=92b08289b7e1"></script>
 </body>
 </html>
