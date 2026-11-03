@@ -21,14 +21,20 @@ log() { echo "$(date -u +%FT%TZ) $*"; }
 stop_pod() {
   log "STOPPING pod ${RUNPOD_POD_ID:-?}: $1"
   sync
-  # GraphQL with the pod-scoped key RunPod injects into every pod (verified to
-  # authenticate); runpodctl is only a fallback (it is often unconfigured).
-  out=$(curl -sS -m 30 https://api.runpod.io/graphql \
-    -H "Authorization: Bearer ${RUNPOD_API_KEY:-}" -H "Content-Type: application/json" \
-    -d "{\"query\":\"mutation { podStop(input:{podId:\\\"${RUNPOD_POD_ID}\\\"}) { id desiredStatus } }\"}")
+  # RunPod API with the pod-scoped key RunPod injects into every pod. Python is
+  # used (not curl) because small base images don't ship curl.
+  out=$(python3 - <<'PY' 2>&1
+import json, os, urllib.request
+q = 'mutation { podStop(input:{podId:"%s"}) { id desiredStatus } }' % os.environ.get("RUNPOD_POD_ID", "")
+req = urllib.request.Request("https://api.runpod.io/graphql", data=json.dumps({"query": q}).encode(),
+      headers={"Authorization": "Bearer " + os.environ.get("RUNPOD_API_KEY", ""),
+               "Content-Type": "application/json", "User-Agent": "vto-watchdog/1.0"})
+print(urllib.request.urlopen(req, timeout=30).read().decode())
+PY
+)
   log "podStop -> $out"
   case "$out" in *EXITED*) return ;; esac
-  runpodctl stop pod "${RUNPOD_POD_ID}" || log "runpodctl stop failed too"
+  command -v runpodctl >/dev/null && runpodctl stop pod "${RUNPOD_POD_ID}" || log "fallback stop unavailable"
 }
 
 log "watchdog up: idle=${IDLE_MIN}m cap=${HARD_CAP_MIN}m pod=${RUNPOD_POD_ID:-unknown}"

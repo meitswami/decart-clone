@@ -15,6 +15,7 @@ learned from past wake-ups.
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
 import statistics
@@ -28,7 +29,23 @@ from .config import settings
 log = logging.getLogger("tryon.gpu")
 
 UA = {"User-Agent": "vto-server/1.0"}  # RunPod's proxy rejects default library user-agents
-DEFAULT_ETA = {"resume": 100, "create": 210, "boot": 75}
+DEFAULT_ETA = {"resume": 90, "create": 150, "boot": 60}
+
+# Runs first on every GPU boot: refresh the code on the volume from GitHub
+# (python only: the slim image has no git/curl), keep the old copy if offline.
+FETCH_CODE = (
+    "import io,os,shutil,tarfile,urllib.request\n"
+    "b=os.environ.get('GIT_BRANCH','main'); r=os.environ.get('GIT_REPO','meitswami/decart-clone')\n"
+    "h={'User-Agent':'vto-pod'}\n"
+    "if os.environ.get('GITHUB_TOKEN'): h['Authorization']='token '+os.environ['GITHUB_TOKEN']\n"
+    "try:\n"
+    " d=urllib.request.urlopen(urllib.request.Request(f'https://api.github.com/repos/{r}/tarball/{b}',headers=h),timeout=90).read()\n"
+    " tmp='/workspace/app.new'; shutil.rmtree(tmp,ignore_errors=True); tarfile.open(fileobj=io.BytesIO(d)).extractall(tmp)\n"
+    " src=os.path.join(tmp,os.listdir(tmp)[0]); shutil.rmtree('/workspace/app.old',ignore_errors=True)\n"
+    " os.path.exists('/workspace/app') and os.rename('/workspace/app','/workspace/app.old')\n"
+    " os.rename(src,'/workspace/app'); print('code updated', b)\n"
+    "except Exception as e: print('code update skipped:', e)\n"
+)
 STAGES = {"request": "Finding a free GPU", "boot": "Starting the GPU", "models": "Loading the AI models"}
 
 
@@ -109,7 +126,11 @@ class GpuPool:
         origin = settings.origin
         env = {"WORKER_TOKEN": settings.worker_token, "ENGINE_SECRET": settings.engine_secret,
                "IDLE_MIN": str(settings.gpu_idle_minutes), "GIT_BRANCH": settings.gpu_git_branch,
-               "PUBLIC_ORIGIN": origin}
+               "GIT_REPO": settings.gpu_git_repo, "PUBLIC_ORIGIN": origin,
+               "FETCH_CODE_B64": base64.b64encode(FETCH_CODE.encode()).decode(),
+               "NVIDIA_DRIVER_CAPABILITIES": "compute,utility"}
+        if settings.gpu_github_token:
+            env["GITHUB_TOKEN"] = settings.gpu_github_token
         if origin:
             env["CAPTURE_UPLOAD_URL"] = f"{origin}/captures/upload"
         body = {
@@ -117,13 +138,12 @@ class GpuPool:
             "gpuTypeIds": [g.strip() for g in settings.gpu_types.split(",") if g.strip()],
             "gpuTypePriority": "custom", "networkVolumeId": volume,
             "volumeMountPath": "/workspace", "containerDiskInGb": 30, "ports": ["8000/http"], "env": env,
-            # Update the code on the volume FIRST (the boot script itself may be
-            # new), then boot our services in the background and hand over to
-            # the image's normal start script.
+            # Refresh the code on the volume FIRST (the boot script itself may be
+            # new), then start the watchdog + worker (pod_boot.sh ends in uvicorn).
             "dockerStartCmd": ["bash", "-c",
-                               "(cd /workspace/app && timeout 90 git fetch -q --depth 1 origin \"${GIT_BRANCH:-main}\" "
-                               "&& git reset -q --hard FETCH_HEAD; "
-                               "bash /workspace/app/virtual-tryon/scripts/pod_boot.sh) & exec /start.sh"],
+                               "python3 -c 'import base64,os; exec(base64.b64decode(os.environ[\"FETCH_CODE_B64\"]))' "
+                               ">> /workspace/boot.log 2>&1; "
+                               "exec bash /workspace/app/virtual-tryon/scripts/pod_boot.sh"],
         }
         r = await c.post(f"{settings.runpod_rest_url}/pods", json=body, headers=self._auth())
         if r.status_code >= 300:

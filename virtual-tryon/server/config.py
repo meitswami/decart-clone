@@ -52,7 +52,11 @@ class Settings(BaseSettings):
                       "NVIDIA RTX 6000 Ada Generation,NVIDIA RTX A6000,NVIDIA A40,NVIDIA L4,"
                       "NVIDIA RTX PRO 6000 Blackwell Server Edition")
     gpu_find_timeout: int = 180           # keep looking for a free GPU this long
-    gpu_image: str = "runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404"
+    # Tiny base image (~45 MB): Python, PyTorch, libraries and models all live on
+    # the network volume (scripts/build_env.sh), so any GPU machine starts fast.
+    gpu_image: str = "python:3.12-slim-bookworm"
+    gpu_git_repo: str = "meitswami/decart-clone"
+    gpu_github_token: str = ""            # only needed if the repo is private
     gpu_idle_minutes: int = 15
     gpu_git_branch: str = "main"
     gpu_wake_timeout: int = 600
