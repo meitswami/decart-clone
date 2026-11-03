@@ -102,7 +102,8 @@ _PARSER_LOCK = threading.Lock()
 
 
 def load_parser():
-    """fashn-human-parser (installed with FASHN). None if unavailable."""
+    """Body/clothing parser. On the GPU this is our MediaPipe parser through the
+    `fashn_human_parser` stand-in in virtual-tryon/shims. None if unavailable."""
     global _PARSER
     with _PARSER_LOCK:
         if _PARSER is None:
