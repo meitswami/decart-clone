@@ -12,6 +12,41 @@ Internal notes for the team. The product overview is in the main [README](../REA
 | `virtual-tryon/` | Next version: own GPU engine, 4K photo, fit assistant, consented captures (see `virtual-tryon/README.md` and `virtual-tryon/WORKLOG.md`) |
 | `docs/assets/` | README images and GIFs |
 
+## New try-on (v2) on the existing domain
+
+v2 = photo try-on up to 4K on an **on-demand GPU**, AI fit estimate, live try-on,
+consented training captures and a private gallery. Your VPS serves the site; the
+GPU (RunPod) **wakes only when a shopper presses Try it on** and switches itself
+off after 15 idle minutes. Shoppers see a "Warming up" loader with an estimate
+on the first try-on.
+
+One-time, on the VPS (after merging to `main`):
+
+```bash
+sudo bash /opt/live-virtual-try-on/deploy/setup-v2.sh
+```
+
+It asks for a RunPod API key (hidden input; use a dedicated key), copies your
+domain and live-engine key from the current settings, runs the new site on
+127.0.0.1:3071 next to the current app, switches nginx (backup kept) and prints
+the gallery link. Re-run any time to update. Go back to the old app instantly:
+
+```bash
+sudo bash /opt/live-virtual-try-on/deploy/rollback-v2.sh
+```
+
+How the GPU part works:
+- Models and a self-contained Python environment live on a RunPod **network
+  volume** (`07gwbgb8fj`, EU-RO-1). GPU boxes boot from the tiny
+  `python:3.12-slim` image, so a fresh machine starts in under a minute.
+- Wake order: resume our stopped box → if its GPU was taken, start a fresh box on
+  the same volume (no reinstall). Keeps looking for a free GPU for up to 3 min.
+- Safety: the box stops itself after 15 idle minutes; the site also stops it if
+  it runs 25 min with no try-on, or never becomes healthy; a failed wake stops it.
+- Limits: 6 wakes per visitor per hour, 200 per day (`/etc/live-virtual-try-on-v2.env`).
+- Live try-on uses the hosted live engine by default (instant). Add `?engine=gpu`
+  to the page address to use our own GPU engine.
+
 ## Run the live site locally
 
 Needs Node.js 20+.

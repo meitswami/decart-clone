@@ -159,6 +159,10 @@ sed -i -E \
   -e "s#client_max_body_size [0-9]+[mM];#client_max_body_size 30m;#" \
   -e "s#proxy_read_timeout [0-9]+s;#proxy_read_timeout 300s;#" \
   "$SITE"
+# Live try-on on our GPU engine streams over a WebSocket: let nginx pass the upgrade.
+if ! grep -q 'proxy_set_header Upgrade' "$SITE"; then
+  sed -i -E 's#^([[:space:]]*)proxy_http_version 1\.1;#&\n\1proxy_set_header Upgrade $http_upgrade;\n\1proxy_set_header Connection $http_connection;#' "$SITE"
+fi
 if ! nginx -t >/dev/null 2>&1; then
   cp -p "$SITE.before-v2" "$SITE"
   die "nginx rejected the change; restored the previous config. Nothing else changed."
