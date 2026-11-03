@@ -41,6 +41,32 @@ def _available() -> bool:
     return (WEIGHTS_DIR / "model.safetensors").exists()
 
 
+class _SkipPersonParse:
+    """FASHN parses the person photo on every call, but with segmentation_free=True
+    (how we always call it) that result is never used; only the garment parse is.
+    Skipping it saves a full parser pass per try-on and per live keyframe.
+    FASHN calls predict(person) then predict(garment); while `skip` is set the
+    first call returns an empty map."""
+
+    def __init__(self, inner):
+        self.inner = inner
+        self._tl = threading.local()
+
+    def arm(self) -> None:
+        self._tl.skip = True
+
+    def predict(self, img):
+        if getattr(self._tl, "skip", False):
+            self._tl.skip = False
+            import numpy as np
+            a = np.asarray(img)
+            return np.zeros(a.shape[:2], np.uint8)
+        return self.inner.predict(img)
+
+    def __getattr__(self, name):
+        return getattr(self.inner, name)
+
+
 def load():
     """Load FASHN once and keep it warm."""
     global _PIPE
@@ -49,6 +75,8 @@ def load():
             from fashn_vton import TryOnPipeline
             t = time.time()
             _PIPE = TryOnPipeline(weights_dir=str(WEIGHTS_DIR))
+            if hasattr(_PIPE, "hp_model"):
+                _PIPE.hp_model = _SkipPersonParse(_PIPE.hp_model)
             log.info("FASHN loaded in %.1fs", time.time() - t)
     return _PIPE
 
@@ -102,7 +130,8 @@ _PARSER_LOCK = threading.Lock()
 
 
 def load_parser():
-    """fashn-human-parser (installed with FASHN). None if unavailable."""
+    """Body/clothing parser. On the GPU this is our MediaPipe parser through the
+    `fashn_human_parser` stand-in in virtual-tryon/shims. None if unavailable."""
     global _PARSER
     with _PARSER_LOCK:
         if _PARSER is None:
@@ -140,8 +169,9 @@ def detect_garment_photo_type(garment) -> str:
     return "model" if person_px > 0.01 else "flat-lay"
 
 
-def garment_mask_fn(category: str):
-    """Returns mask_fn(before_rgb, after_rgb) for hires/live, or None."""
+def garment_mask_fn(category: str, fast: bool = False):
+    """Returns mask_fn(before_rgb, after_rgb) for hires/live, or None.
+    fast=True (live keyframes) parses only the camera frame, not the result."""
     parser = load_parser()
     if parser is None:
         return None
@@ -151,7 +181,20 @@ def garment_mask_fn(category: str):
     def parse(img):
         with lock:
             return parser.predict(img)
-    return lambda before, after: semantic_mask(before, after, category, parse)
+    return lambda before, after: semantic_mask(before, after, category, parse, parse_after=not fast)
+
+
+def warm_up() -> None:
+    """Run one live-preset try-on and one 4K paste-back on FASHN's own example
+    pictures, so CUDA kernels, the pose model and the parser are ready."""
+    ex = Path(os.environ.get("WARM_EXAMPLES", "/workspace/vto/fashn-vton-1.5/examples/data"))
+    person_p, garment_p = ex / "model.webp", ex / "garment.webp"
+    if not (person_p.exists() and garment_p.exists()):
+        log.info("warm-up skipped (no example pictures at %s)", ex)
+        return
+    t = time.time()
+    run_local(person_p.read_bytes(), garment_p.read_bytes(), "tops", quality="live", target_long_side=1024)
+    log.info("warm-up try-on done in %.1fs", time.time() - t)
 
 
 def person_box_fn():
@@ -205,6 +248,9 @@ def _call_model(person: Image.Image, garment: Image.Image, category: str,
     params = inspect.signature(pipe.__call__).parameters
     if not any(p.kind == p.VAR_KEYWORD for p in params.values()):
         kwargs = {k: v for k, v in kwargs.items() if k in params}
+    hp = getattr(pipe, "hp_model", None)
+    if isinstance(hp, _SkipPersonParse) and kwargs.get("segmentation_free", True):
+        hp.arm()
     return pipe(**kwargs).images[0]
 
 

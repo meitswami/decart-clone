@@ -34,7 +34,7 @@ log = logging.getLogger("tryon.worker")
 TOKEN = os.environ.get("WORKER_TOKEN", "")
 KEEPALIVE = Path(os.environ.get("KEEPALIVE", "/workspace/.keepalive"))
 _GPU_LOCK = threading.Lock()  # one photo generation at a time on one GPU
-_READY = {"clip": False}
+_READY = {"clip": False, "warm": False}
 
 app = FastAPI(title="VTO GPU worker", docs_url=None, redoc_url=None)
 
@@ -62,6 +62,14 @@ def warm():
                 photo_tryon.load()
                 photo_tryon.load_upscaler()
                 photo_tryon.load_parser()
+                # One small try-on before saying "ready", so the first shopper
+                # doesn't pay the GPU's first-run setup (40 s photo / no live
+                # garment for 20 s otherwise).
+                try:
+                    photo_tryon.warm_up()
+                except Exception:
+                    log.exception("warm-up try-on failed")
+            _READY["warm"] = True
             if person_analysis.available():
                 person_analysis._load()
                 _READY["clip"] = True
@@ -79,7 +87,7 @@ def health():
             gpu = torch.cuda.get_device_name(0)
     except Exception:
         pass
-    loaded = photo_tryon._PIPE is not None and photo_tryon._PARSER is not None
+    loaded = photo_tryon._PIPE is not None and photo_tryon._PARSER is not None and _READY["warm"]
     try:  # seconds since the last real work (photo, analysis, live frame)
         idle_s = round(time.time() - KEEPALIVE.stat().st_mtime)
     except OSError:

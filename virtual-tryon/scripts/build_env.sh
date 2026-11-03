@@ -24,5 +24,6 @@ import torch, cv2, onnxruntime as ort, fashn_vton, spandrel, transformers
 print("torch", torch.__version__, "cuda", torch.cuda.is_available(), torch.cuda.get_device_name(0) if torch.cuda.is_available() else "-")
 print("cv2", cv2.__version__, "| ort", ort.__version__, ort.get_available_providers()[:2], "| transformers", transformers.__version__)
 PY
+bash "$(dirname "$0")/setup_mediapipe.sh"   # body parser (Apache-2.0)
 du -sh "$ENV"
 echo BUILD_DONE

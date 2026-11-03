@@ -279,3 +279,31 @@ Rules we follow:
   - **Sessions:** the last 30 GPU sessions, with GPU type, price per hour and cost by type.
   - Backed by a per-session ledger, `gpu_usage.json`, next to the GPU state file, and served by `GET /admin/api/costs`.
 - **Found:** RunPod is charging **$0.071/h, about $51/month, while everything is asleep.** Most of it (about $48/month) is the 80 GB disks of 3 old stopped `vto-dev` pods from the first setup, which are no longer needed. The models volume is about $2.80/month. Deleting those pods needs the owner's OK.
+
+### 18:00–19:15 — MediaPipe parser (licence fix) and live upgrades (owner: "go ahead")
+- **Found:** FASHN VTON itself imports `fashn_human_parser`. On every call it uses the parser to cut the garment out of on-model product photos. Replacing only our own masks would not have been enough.
+- **New parser,** `pipeline/body_parse.py`, Apache-2.0 only. It uses MediaPipe selfie-multiclass segmentation plus the pose landmarker (heavy). It produces the same 18-label map as before:
+  - segmentation runs on overlapping square tiles over the person, the per-class confidences are blended, and edges are snapped with a guided filter;
+  - the top/bottom split is the strongest clothes colour change between the waist and the knees;
+  - hands come from the pose hand points ∩ skin; "others" (glasses, jewellery, bags, shoes) are kept unchanged;
+  - a small result cache, and a single fast pass for live-sized frames.
+- **Stand-in package** `virtual-tryon/shims/fashn_human_parser` gives FASHN and our code the MediaPipe parser. `pod_boot.sh` puts it first on PYTHONPATH, but only when MediaPipe, its models and libEGL are on the volume.
+- **Installed on volume `07gwbgb8fj`** (`scripts/setup_mediapipe.sh`): mediapipe 1.2.0 (no-deps) plus absl-py, flatbuffers, certifi and matplotlib; the models in `/workspace/vto/models/mediapipe`; and Debian libEGL/libGL in `env312/syslib`, which MediaPipe needs and the slim image lacks.
+- **A/B test on a real GPU,** old vs new parser, 6 try-ons from the collection: equal or cleaner results, same speed (6–7 s each).
+  - Fixed during the A/B: white shirt over white trousers (no colour change); a sitting pose (waist above the hip joints).
+- **FASHN's unused person parse is skipped** (`segmentation_free=True`), saving one parser pass per try-on and per keyframe.
+- **Live upgrades:**
+  - new keyframes cross-fade in over 0.35 s (no popping);
+  - the keyframe mask covers only the person's own clothes and skin, which removed a dark halo seen in testing;
+  - live parses only the camera frame;
+  - 4 frames in flight;
+  - per-frame time shown in the live stats.
+- **Measured with a moving-person test video:**
+  - RTX 5090: keyframes 1.7 s; RTX 4090: 2.4 s.
+  - 9 ms of GPU-box work per frame, about 8 fps and 0.23–0.27 s delay; the headless test browser was the limit.
+  - Hands visible over the garment; no halo.
+- **GPU list:** dropped the L4, which gave 26 s photos and 7 s keyframes. A stopped pod on a dropped GPU type is replaced, not resumed.
+- **Warm-up try-on before "ready"** (FASHN's example pictures): the first photo after a wake now takes 11 s (was 40 s), and the first live session shows the outfit within about 6 s (was nothing for 20 s).
+- **Stuck machine:** an RTX PRO 6000 box never started its container in 10 minutes. The wake timed out and the box was stopped. Now a box that hasn't started within 3 min is dropped and another is tried, once. Tested in the simulator.
+- **GPU spend for this work:** about $0.68 across 6 test wakes plus 2 A/B jobs. All GPUs were stopped at 19:15. Balance $42.75.
+- **Cost per use (4090/5090):** photo about $0.004, live session about $0.006, wake-up about $0.04–0.07.

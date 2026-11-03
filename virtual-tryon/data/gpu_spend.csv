@@ -16,3 +16,19 @@ time_ist,event,pod_id,name,gpu,cost_per_hr_usd
 2026-11-03 17:05,stop,z14q2aclblm2ft,vto-gpu(site test),RTX 4090,~0.69
 2026-11-03 17:47,create,3ai5ax7l7fw070,vto-gpu(branch test),,~0.69-1.19
 2026-11-03 17:44,stop,3ai5ax7l7fw070,vto-gpu(branch test),,~0.69-1.19
+2026-11-03 18:01,create,y06xdxfnniclzc,vto-ab(mediapipe install+A/B),,~0.7-1.2
+2026-11-03 18:08,stop,y06xdxfnniclzc,vto-ab,,1.19
+2026-11-03 18:09,create,x7q5vjjwsw8uol,vto-ab(mediapipe A/B rerun),,
+2026-11-03 18:14,stop,x7q5vjjwsw8uol,vto-ab,RTX PRO 6000,2.49
+2026-11-03 18:18,create,47x5r76nz47cfz,vto-gpu(branch test RTX 4090),RTX 4090,0.89
+2026-11-03 18:27,stop,47x5r76nz47cfz,vto-gpu(branch test),RTX 4090,0.89
+2026-11-03 18:27,create,tlxfc83683zzwa,vto-gpu(branch test L4),L4,0.59
+2026-11-03 18:35,stop,tlxfc83683zzwa,vto-gpu(branch test),L4,0.59
+2026-11-03 18:38,create,ykkqex8alaljtz,vto-gpu(branch test RTX 5090),RTX 5090,1.19
+2026-11-03 18:44,stop,ykkqex8alaljtz,vto-gpu(branch test),RTX 5090,1.19
+2026-11-03 18:44,create,jxrapz5dzopryy,vto-gpu(branch test None),None,None
+2026-11-03 18:54,stop,jxrapz5dzopryy,vto-gpu(branch test),None,None
+2026-11-03 18:58,create,am1nqkyuwgeso9,vto-gpu(branch test RTX 4090),RTX 4090,0.89
+2026-11-03 19:03,stop,am1nqkyuwgeso9,vto-gpu(branch test),RTX 4090,0.89
+2026-11-03 19:04,create,zi6kjdvmm5bfn0,vto-gpu(branch test RTX 5090),RTX 5090,1.19
+2026-11-03 19:09,stop,zi6kjdvmm5bfn0,vto-gpu(branch test),RTX 5090,1.19

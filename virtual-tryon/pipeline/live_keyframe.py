@@ -40,10 +40,13 @@ class Keyframe:
 class KeyframeCompositor:
     """Warps the latest dressed keyframe onto each new frame (CPU, ~ms)."""
 
-    def __init__(self, work_width: int = 320):
+    def __init__(self, work_width: int = 320, fade_s: float = 0.35):
         self.work_width = work_width
+        self.fade_s = fade_s  # cross-fade from the old keyframe to a new one (no popping)
         self._flow = cv2.DISOpticalFlow_create(cv2.DISOPTICAL_FLOW_PRESET_FAST)
         self.key: Keyframe | None = None
+        self.prev: Keyframe | None = None
+        self.switched_at = 0.0
         self.last_motion = 0.0  # median flow magnitude (work px) vs keyframe
 
     def _small(self, rgb: np.ndarray) -> np.ndarray:
@@ -58,17 +61,32 @@ class KeyframeCompositor:
             dressed_rgb = cv2.resize(dressed_rgb, (src_rgb.shape[1], src_rgb.shape[0]),
                                      interpolation=cv2.INTER_LINEAR)
         m = change_mask(src_rgb, dressed_rgb) if mask is None else mask.astype(np.float32)
+        self.prev, self.switched_at = self.key, time.time()
         self.key = Keyframe(self._small(src_rgb), dressed_rgb, m, time.time())
 
     def apply(self, frame_rgb: np.ndarray) -> np.ndarray:
         k = self.key
         if k is None:
             return frame_rgb
-        h, w = frame_rgb.shape[:2]
         cur = self._small(frame_rgb)
         if cur.shape != k.src_small.shape:  # resolution changed: drop keyframe
-            self.key = None
+            self.key = self.prev = None
             return frame_rgb
+        warped, wm = self._warp(k, frame_rgb, cur, track=True)
+        p, a = self.prev, (time.time() - self.switched_at) / max(1e-3, self.fade_s)
+        if p is not None and a < 1.0 and p.src_small.shape == cur.shape:
+            pw, pm = self._warp(p, frame_rgb, cur, track=False)
+            col = warped * (wm * a) + pw * (pm * (1 - a))
+            wm = wm * a + pm * (1 - a)
+            warped = col / np.maximum(wm, 1e-4)
+        elif p is not None:
+            self.prev = None
+        out = frame_rgb.astype(np.float32) * (1 - wm) + warped * wm
+        return out.round().clip(0, 255).astype(np.uint8)
+
+    def _warp(self, k: Keyframe, frame_rgb: np.ndarray, cur: np.ndarray, *, track: bool):
+        """The keyframe's dressed garment moved onto this frame: (RGB float32, mask (h, w, 1))."""
+        h, w = frame_rgb.shape[:2]
         # Flow cur -> key: for each current pixel, where it was in the keyframe.
         fwd = self._flow.calc(cur, k.src_small, None)
         bwd = self._flow.calc(k.src_small, cur, None)
@@ -79,7 +97,8 @@ class KeyframeCompositor:
         by = cv2.remap(bwd[..., 1], gx + fwd[..., 0], gy + fwd[..., 1], cv2.INTER_LINEAR)
         err = np.sqrt((fwd[..., 0] + bx) ** 2 + (fwd[..., 1] + by) ** 2)
         conf = np.clip(1.0 - (err - 1.0) / 3.0, 0.0, 1.0).astype(np.float32)
-        self.last_motion = float(np.median(np.linalg.norm(fwd, axis=2)))
+        if track:
+            self.last_motion = float(np.median(np.linalg.norm(fwd, axis=2)))
 
         # 1) Robust whole-garment motion: affine fit (RANSAC) on confident flow
         #    vectors that land on the keyframe garment. Flat-coloured fabric has
@@ -130,8 +149,7 @@ class KeyframeCompositor:
         warped = cv2.remap(k.dressed, mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
         wm = cv2.remap(k.mask, mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
         wm = (wm * fade_full)[..., None]
-        out = frame_rgb.astype(np.float32) * (1 - wm) + warped.astype(np.float32) * wm
-        return out.round().clip(0, 255).astype(np.uint8)
+        return warped.astype(np.float32), wm
 
 
 class LiveDresser:

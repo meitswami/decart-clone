@@ -56,9 +56,11 @@ class Settings(BaseSettings):
     # Network volume(s) with the models, comma-separated, tried in order. Each one
     # lives in one data centre; a second volume in another DC improves availability.
     gpu_network_volume: str = ""
+    # Fast GPUs only, in order of preference. (L4 was dropped: ~4x slower, live
+    # keyframes took 7 s instead of under 2 s.)
     gpu_types: str = ("NVIDIA GeForce RTX 4090,NVIDIA GeForce RTX 5090,NVIDIA L40S,"
-                      "NVIDIA RTX 6000 Ada Generation,NVIDIA RTX A6000,NVIDIA A40,NVIDIA L4,"
-                      "NVIDIA RTX PRO 6000 Blackwell Server Edition")
+                      "NVIDIA RTX 6000 Ada Generation,NVIDIA RTX PRO 6000 Blackwell Server Edition,"
+                      "NVIDIA RTX A6000,NVIDIA A40")
     gpu_find_timeout: int = 180           # keep looking for a free GPU this long
     # Tiny base image (~45 MB): Python, PyTorch, libraries and models all live on
     # the network volume (scripts/build_env.sh), so any GPU machine starts fast.
@@ -68,6 +70,9 @@ class Settings(BaseSettings):
     gpu_idle_minutes: int = 2             # sleep after this many minutes with no try-on
     gpu_git_branch: str = "main"
     gpu_wake_timeout: int = 600
+    # A new machine that hasn't started its container in this time (stuck image
+    # download) is dropped and another one is tried, once.
+    gpu_boot_timeout: int = 180
     gpu_wakes_per_ip_per_hour: int = 6
     gpu_daily_wake_limit: int = 200
     gpu_cleanup_superseded: bool = True

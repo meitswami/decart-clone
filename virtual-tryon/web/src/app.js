@@ -401,7 +401,7 @@ async function connectWs(data) {
   live = s;
 
   const sendFrame = () => {
-    if (live !== s || ws.readyState !== 1 || s.inflight >= 3 || !src.videoWidth) return;
+    if (live !== s || ws.readyState !== 1 || s.inflight >= 4 || !src.videoWidth) return;
     cap.width = w;
     cap.height = Math.round((src.videoHeight / src.videoWidth) * w);
     cctx.drawImage(src, 0, 0, cap.width, cap.height);
@@ -453,7 +453,7 @@ async function connectWs(data) {
     const secs = (performance.now() - s.t0) / 1000;
     const recent = s.lat.slice(-20);
     const avg = recent.length ? Math.round(recent.reduce((a, b) => a + b, 0) / recent.length) : 0;
-    const k = s.stats ? ` · keyframes ${s.stats.keyframes}${s.stats.key_ms ? ` (${(s.stats.key_ms / 1000).toFixed(1)} s each)` : ""}` : "";
+    const k = s.stats ? ` · keyframes ${s.stats.keyframes}${s.stats.key_ms ? ` (${(s.stats.key_ms / 1000).toFixed(1)} s each)` : ""}${s.stats.frame_ms ? ` · ${Math.round(s.stats.frame_ms)} ms/frame` : ""}` : "";
     $("#liveStats").textContent = `${(s.got / Math.max(secs, 0.1)).toFixed(1)} fps · delay ${avg} ms${k}`;
   }, 1000);
 }

@@ -120,7 +120,7 @@ def keep_hands(pb: np.ndarray) -> np.ndarray:
 
 
 def semantic_mask(before: np.ndarray, after: np.ndarray, category: str,
-                  parse: Callable[[np.ndarray], np.ndarray]) -> np.ndarray:
+                  parse: Callable[[np.ndarray], np.ndarray], parse_after: bool = True) -> np.ndarray:
     """Garment region from a human parser instead of colour difference alone.
 
     region = old garment ∪ new garment ∪ (skin that actually changed, e.g. new
@@ -128,18 +128,28 @@ def semantic_mask(before: np.ndarray, after: np.ndarray, category: str,
     Colour-difference masks punch holes wherever the new garment matches the old
     one (white logo letters on a former white tee); this doesn't.
     """
-    pb, pa = parse(before), parse(after)
     h, w = before.shape[:2]
+    pb = parse(before)
     if pb.shape != (h, w):
         pb = cv2.resize(pb.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST)
-    if pa.shape != (h, w):
-        pa = cv2.resize(pa.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST)
-    ids = lambda names: [_IDS[n] for n in names]
-    garment = np.isin(pb, ids(COVERAGE[category])) | np.isin(pa, ids(COVERAGE[category]))
     diff = change_mask(before, after) > 0.5
+    ids = lambda names: [_IDS[n] for n in names]
+    if parse_after:
+        pa = parse(after)
+        if pa.shape != (h, w):
+            pa = cv2.resize(pa.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST)
+    else:  # live: the new garment = what changed on the person's own clothes/skin
+        # (not the background around them: a moving camera turns that into a halo)
+        body = (np.isin(pb, ids(COVERAGE["one-pieces"] + SKIN["one-pieces"]))).astype(np.uint8)
+        r = max(3, int(min(h, w) * 0.012) | 1)
+        near = cv2.dilate(body, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (r, r))) > 0
+        pa = np.where(diff & near & ~np.isin(pb, ids(IDENTITY + ["hands"])), _IDS["top"], 0).astype(np.uint8)
+        if category == "bottoms":
+            pa[pa > 0] = _IDS["pants"]
+    garment = np.isin(pb, ids(COVERAGE[category])) | np.isin(pa, ids(COVERAGE[category]))
     skin = (np.isin(pb, ids(SKIN[category])) | np.isin(pa, ids(SKIN[category]))) & diff
     m = (garment | skin).astype(np.uint8)
-    ks = max(3, int(min(h, w) * 0.012) | 1)
+    ks = max(3, int(min(h, w) * (0.012 if parse_after else 0.006)) | 1)
     k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (ks, ks))
     m = cv2.morphologyEx(m, cv2.MORPH_CLOSE, k, iterations=2)
     m = cv2.dilate(m, k, iterations=1)
