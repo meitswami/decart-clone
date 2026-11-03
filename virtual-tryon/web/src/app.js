@@ -589,6 +589,139 @@ $("#liveFlip").onclick = async () => {
 document.addEventListener("visibilitychange", () => { if (document.hidden && live) stopLive("Stopped because the app was in the background."); });
 window.addEventListener("pagehide", () => { if (live) stopLive(); });
 
+// ---------- zoom viewer (garment, your photo, result) ----------
+const zoom = { s: 1, fit: 1, x: 0, y: 0, pts: new Map(), pinch: null };
+function zoomApply() {
+  const img = $("#zoomImg");
+  img.style.transform = `translate(-50%, -50%) translate(${zoom.x}px, ${zoom.y}px) scale(${zoom.s})`;
+  $("#zoomPct").textContent = `${Math.round((zoom.s / zoom.fit) * 100)}%`;
+}
+function zoomTo(s, cx = 0, cy = 0) {
+  const ns = Math.min(zoom.fit * 8, Math.max(zoom.fit * 0.5, s));
+  zoom.x = cx - (cx - zoom.x) * (ns / zoom.s);
+  zoom.y = cy - (cy - zoom.y) * (ns / zoom.s);
+  zoom.s = ns;
+  zoomApply();
+}
+function zoomFit() {
+  const img = $("#zoomImg"), st = $("#zoomStage").getBoundingClientRect();
+  if (!img.naturalWidth) return;
+  zoom.fit = Math.min(st.width / img.naturalWidth, st.height / img.naturalHeight);
+  zoom.s = zoom.fit; zoom.x = 0; zoom.y = 0;
+  zoomApply();
+}
+function openZoom(src, title) {
+  if (!src) return;
+  const img = $("#zoomImg");
+  $("#zoomTitle").textContent = title || "";
+  img.alt = title || "Zoomed picture";
+  $("#zoom").hidden = false;
+  img.onload = zoomFit;
+  img.src = src;
+  if (img.complete) zoomFit();
+  $("#zoomClose").focus();
+}
+const closeZoom = () => { $("#zoom").hidden = true; zoom.pts.clear(); zoom.pinch = null; };
+const stageXY = (e) => {
+  const r = $("#zoomStage").getBoundingClientRect();
+  return [e.clientX - r.left - r.width / 2, e.clientY - r.top - r.height / 2];
+};
+$("#zoomIn").onclick = () => zoomTo(zoom.s * 1.5);
+$("#zoomOut").onclick = () => zoomTo(zoom.s / 1.5);
+$("#zoomFit").onclick = zoomFit;
+$("#zoomClose").onclick = closeZoom;
+$("#zoom").addEventListener("click", (e) => { if (e.target.id === "zoom") closeZoom(); });
+document.addEventListener("keydown", (e) => {
+  if ($("#zoom").hidden) return;
+  if (e.key === "Escape") closeZoom();
+  else if (e.key === "+" || e.key === "=") zoomTo(zoom.s * 1.5);
+  else if (e.key === "-") zoomTo(zoom.s / 1.5);
+});
+window.addEventListener("resize", () => { if (!$("#zoom").hidden) zoomFit(); });
+{
+  const st = $("#zoomStage");
+  st.addEventListener("wheel", (e) => { e.preventDefault(); const [x, y] = stageXY(e); zoomTo(zoom.s * (e.deltaY < 0 ? 1.2 : 1 / 1.2), x, y); }, { passive: false });
+  st.addEventListener("dblclick", (e) => { const [x, y] = stageXY(e); zoom.s > zoom.fit * 1.5 ? zoomFit() : zoomTo(zoom.fit * 2.5, x, y); });
+  st.addEventListener("pointerdown", (e) => { st.setPointerCapture(e.pointerId); zoom.pts.set(e.pointerId, [e.clientX, e.clientY]); st.classList.add("drag"); });
+  st.addEventListener("pointermove", (e) => {
+    const prev = zoom.pts.get(e.pointerId);
+    if (!prev) return;
+    zoom.pts.set(e.pointerId, [e.clientX, e.clientY]);
+    if (zoom.pts.size === 2) {               // pinch
+      const [a, b] = [...zoom.pts.values()];
+      const d = Math.hypot(a[0] - b[0], a[1] - b[1]);
+      const r = st.getBoundingClientRect();
+      const mid = [(a[0] + b[0]) / 2 - r.left - r.width / 2, (a[1] + b[1]) / 2 - r.top - r.height / 2];
+      if (zoom.pinch) zoomTo(zoom.s * (d / zoom.pinch), mid[0], mid[1]);
+      zoom.pinch = d;
+    } else if (zoom.pts.size === 1) {        // drag to look around
+      zoom.x += e.clientX - prev[0];
+      zoom.y += e.clientY - prev[1];
+      zoomApply();
+    }
+  });
+  const up = (e) => { zoom.pts.delete(e.pointerId); if (zoom.pts.size < 2) zoom.pinch = null; if (!zoom.pts.size) st.classList.remove("drag"); };
+  st.addEventListener("pointerup", up);
+  st.addEventListener("pointercancel", up);
+}
+const zoomGarment = () => openZoom($("#garmentPreview").src, $("#garmentName").textContent);
+$("#garmentZoom").onclick = zoomGarment;
+$("#garmentZoomLink").onclick = zoomGarment;
+$("#personPreview").onclick = () => openZoom($("#personPreview").src, "Your photo");
+$("#resultImg").onclick = () => openZoom($("#resultImg").src, "Your try-on");
+
+// ---------- owner: GPU costs (only with ?admin=<gallery token>) ----------
+let adminToken = "";
+try {
+  const q = new URLSearchParams(location.search);
+  if (q.get("admin")) {
+    sessionStorage.setItem("vtoAdmin", q.get("admin"));
+    q.delete("admin");
+    history.replaceState(null, "", location.pathname + (q.toString() ? `?${q}` : "") + location.hash);
+  }
+  adminToken = sessionStorage.getItem("vtoAdmin") || "";
+} catch {}
+const usd = (v) => (v == null ? "–" : v < 0.01 && v > 0 ? `$${v.toFixed(4)}` : `$${v.toFixed(2)}`);
+const dur = (s) => (s >= 3600 ? `${(s / 3600).toFixed(1)} h` : s >= 60 ? `${Math.round(s / 60)} min` : `${Math.round(s)} s`);
+const esc = (t) => String(t ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+async function loadCosts() {
+  if (!adminToken) return;
+  let d;
+  try {
+    const r = await fetch(`/admin/api/costs?token=${encodeURIComponent(adminToken)}`, { cache: "no-store" });
+    if (!r.ok) { $("#costCard").hidden = true; return; }
+    d = await r.json();
+  } catch { return; }
+  if (!d.enabled) return;
+  $("#costCard").hidden = false;
+  const a = d.all_time, avg = d.average;
+  $("#costTiles").innerHTML = [
+    [usd(d.balance), "RunPod balance left"],
+    [usd(d.today.cost), `GPU spent today · ${d.today.sessions} session${d.today.sessions === 1 ? "" : "s"}`],
+    [usd(a.cost), `GPU spent all time · ${a.sessions} sessions`],
+    [d.spend_per_hr_now == null ? "–" : `${usd(d.spend_per_hr_now)}/h`, "Charging right now (GPU + storage)"],
+    [`${usd(d.storage_per_month)}/mo`, "Model storage (always)"],
+    [`${d.idle_minutes} min`, "GPU sleeps after this idle time"],
+  ].map(([v, l]) => `<div class="costtile"><b>${esc(v)}</b><span>${esc(l)}</span></div>`).join("");
+  const rows = [
+    ["📸 Photo try-ons", a.photo.n, dur(a.photo.seconds), a.photo.cost, avg.photo == null ? "–" : `${usd(avg.photo)} each`],
+    ["🎥 Live try-ons", a.live.n, dur(a.live.seconds), a.live.cost, avg.live == null ? "–" : `${usd(avg.live)} each`],
+    ["🧠 AI fit estimates", a.fit.n, dur(a.fit.seconds), a.fit.cost, avg.fit == null ? "–" : `${usd(avg.fit)} each`],
+    ["⏳ Waking the GPU", a.sessions, "", a.wake, avg.wake == null ? "–" : `${usd(avg.wake)} per wake-up`],
+    ["💤 Idle before sleep", "", "", a.idle, `GPU waits ${d.idle_minutes} min after the last try-on`],
+  ];
+  $("#costSplit").innerHTML = `<tr><th>What</th><th class="num">Cost</th><th class="num">How many</th><th>Average</th><th class="num">GPU time</th></tr>` +
+    rows.map((r) => `<tr><td>${esc(r[0])}</td><td class="num"><b>${usd(r[3])}</b></td><td class="num">${esc(r[1])}</td><td>${esc(r[4])}</td><td class="num">${esc(r[2])}</td></tr>`).join("") +
+    `<tr><th>Total</th><th class="num">${usd(a.cost)}</th><th></th><th></th><th></th></tr>`;
+  $("#costSessions").innerHTML = `<tr><th>Started</th><th class="num">Cost</th><th class="num">Photo</th><th class="num">Live</th><th class="num">Fit</th><th class="num">Awake</th><th>GPU</th><th class="num">Rate</th></tr>` +
+    (d.sessions.length ? d.sessions.map((s) => `<tr><td>${esc(new Date(s.start * 1000).toLocaleString([], { dateStyle: "short", timeStyle: "short" }))}${s.running ? " · <b>awake</b>" : s.ok === false ? " · failed" : ""}</td>` +
+      `<td class="num"><b>${usd(s.cost.total)}</b></td><td class="num">${s.counts.photo} · ${usd(s.cost.photo)}</td><td class="num">${s.counts.live} · ${usd(s.cost.live)}</td><td class="num">${s.counts.fit} · ${usd(s.cost.fit)}</td>` +
+      `<td class="num">${dur(s.seconds.total)}</td><td>${esc(s.gpu || "–")}</td><td class="num">${s.rate_per_hr == null ? "–" : `${usd(s.rate_per_hr)}/h`}</td></tr>`).join("")
+      : `<tr><td colspan="8">No GPU sessions recorded yet.</td></tr>`);
+  $("#costNote").textContent = "GPU time is billed by RunPod per second while the GPU is awake: waking it up, running try-ons, and the idle minutes before it sleeps. Storage is billed all the time. Balance updates every minute.";
+}
+if (adminToken) { loadCosts(); setInterval(() => { if (!document.hidden) loadCosts(); }, 30000); }
+
 // ---------- boot ----------
 (async () => {
   try { cfg = { ...cfg, ...(await (await fetch("/config")).json()) }; } catch {}

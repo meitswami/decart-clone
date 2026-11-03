@@ -80,8 +80,12 @@ def health():
     except Exception:
         pass
     loaded = photo_tryon._PIPE is not None and photo_tryon._PARSER is not None
+    try:  # seconds since the last real work (photo, analysis, live frame)
+        idle_s = round(time.time() - KEEPALIVE.stat().st_mtime)
+    except OSError:
+        idle_s = None
     return {"ok": True, "gpu": gpu, "weights": photo_tryon._available(), "model_loaded": loaded,
-            "esrgan": bool(photo_tryon._UPSCALER), "clip": _READY["clip"]}
+            "esrgan": bool(photo_tryon._UPSCALER), "clip": _READY["clip"], "idle_s": idle_s}
 
 
 def _photo_sync(p: bytes, g: bytes, category: str, gpt: str, quality: str, tls: int | None):

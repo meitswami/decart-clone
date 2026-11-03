@@ -65,7 +65,7 @@ class Settings(BaseSettings):
     gpu_image: str = "python:3.12-slim-bookworm"
     gpu_git_repo: str = "meitswami/decart-clone"
     gpu_github_token: str = ""            # only needed if the repo is private
-    gpu_idle_minutes: int = 15
+    gpu_idle_minutes: int = 2             # sleep after this many minutes with no try-on
     gpu_git_branch: str = "main"
     gpu_wake_timeout: int = 600
     gpu_wakes_per_ip_per_hour: int = 6

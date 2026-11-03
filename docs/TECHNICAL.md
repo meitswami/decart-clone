@@ -17,7 +17,7 @@ Internal notes for the team. The product overview is in the main [README](../REA
 v2 = photo try-on up to 4K on an **on-demand GPU**, AI fit estimate, live try-on,
 consented training captures and a private gallery. Your VPS serves the site; the
 GPU (RunPod) **wakes only when a shopper presses Try it on** and switches itself
-off after 15 idle minutes. Shoppers see a "Warming up" loader with an estimate
+off after 2 idle minutes. Shoppers see a "Warming up" loader with an estimate
 on the first try-on.
 
 One-time, on the VPS (after merging to `main`):
@@ -41,8 +41,9 @@ How the GPU part works:
   `python:3.12-slim` image, so a fresh machine starts in under a minute.
 - Wake order: resume our stopped box → if its GPU was taken, start a fresh box on
   the same volume (no reinstall). Keeps looking for a free GPU for up to 3 min.
-- Safety: the box stops itself after 15 idle minutes; the site also stops it if
-  it runs 25 min with no try-on, or never becomes healthy; a failed wake stops it.
+- Sleep: the site stops the box after 2 minutes with no try-on, no live session
+  and no work on the GPU (`GPU_IDLE_MINUTES`); the box's own watchdog is a backup;
+  a box that never becomes healthy or a failed wake is stopped too.
 - Limits: 6 wakes per visitor per hour, 200 per day (`/etc/live-virtual-try-on-v2.env`).
 - Live try-on uses our own GPU engine by default: only the garment area is
   repainted on the real camera picture, so the person and background never

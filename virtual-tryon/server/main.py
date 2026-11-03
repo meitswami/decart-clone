@@ -174,10 +174,13 @@ async def analyze_person(image: UploadFile = File(...)):
             return {"available": True, "asleep": True}
         import httpx
         try:
+            t0 = time.time()
             async with httpx.AsyncClient(timeout=60) as c:
                 r = await c.post(f"{gpu.worker_url()}/analyze", files={"image": ("p.jpg", data)},
                                  headers={"Authorization": f"Bearer {settings.worker_token}",
                                           "User-Agent": "vto-server/1.0"})
+            if r.status_code == 200:
+                gpu.record("fit", time.time() - t0)
             return r.json() if r.status_code == 200 else {"available": False}
         except Exception:
             log.exception("remote analysis failed")
@@ -238,6 +241,8 @@ async def photo_tryon_ep(person: UploadFile = File(...),
             out, _info = await run_in_threadpool(
                 lambda: photo_tryon.run_remote(p, g, category, url=gpu.worker_url(), token=settings.worker_token,
                                                garment_photo_type=garment_photo_type, quality=quality))
+            gpu.record("photo", float((_info or {}).get("total_s") or (time.time() - t)))
+            gpu.touch()
         else:
             out = await run_in_threadpool(photo_tryon.run, p, g, category,
                                           garment_photo_type=garment_photo_type, quality=quality)
@@ -332,6 +337,8 @@ async def live_token(request: Request,
         return _err(503, "live_unavailable", "Live try-on isn't available right now.")
     if trial:
         captures.update_meta(trial, kind="live", engine="gpu", consent=True, store_id=store_id)
+    if _pool():
+        gpu.live_started(sid)
     engine_url = gpu.worker_url() if _pool() else settings.gpu_engine_url.rstrip("/")
     return JSONResponse({**base, "backend": "local", "transport": settings.live_transport,
                          "session_id": sid, "trial_id": trial,
@@ -366,6 +373,8 @@ async def live_end(session_id: str = Form(""), store_id: str = Form(""),
     """Close a session. Duration is measured on the server, not trusted from
     the browser; store_id/seconds are accepted but ignored (old clients)."""
     used = sessions.end(session_id) if session_id else None
+    if session_id and _pool():
+        gpu.live_ended(session_id)
     return {"ok": True, "charged_seconds": round(used, 1) if used is not None else None}
 
 
@@ -453,6 +462,16 @@ def admin_file(request: Request, day: str, trial_id: str, name: str):
         return FileResponse(captures.file_path(day, trial_id, name), headers={"Cache-Control": "private"})
     except (ValueError, FileNotFoundError):
         return _err(404, "missing", "Not found.")
+
+
+@app.get("/admin/api/costs")
+async def admin_costs(request: Request):
+    """Owner only: RunPod balance and what each GPU session cost, by try-on type."""
+    if not _admin_ok(request):
+        return _err(401, "auth", "Not authorised.")
+    if not _pool():
+        return {"enabled": False}
+    return JSONResponse({"enabled": True, **(await gpu.costs())}, headers={"Cache-Control": "no-store"})
 
 
 @app.get("/admin/export.zip")
