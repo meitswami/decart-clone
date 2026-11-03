@@ -78,12 +78,11 @@ def analyze(image_bytes: bytes) -> dict:
     for lab, p in zip(s["labels"], logits.tolist()):
         scores[lab] = scores.get(lab, 0.0) + p
     person = scores["male"] + scores["female"]
-    if scores["none"] > person:
-        return {"person_found": False, "gender": "unsure", "confidence": 0.0,
-                "scores": {k: round(v, 3) for k, v in scores.items()}}
-    male_share = scores["male"] / person
+    male_share = scores["male"] / max(person, 1e-6)
     gender, conf = ("male", male_share) if male_share >= 0.5 else ("female", 1 - male_share)
     if conf < MIN_CONFIDENCE:
         gender = "unsure"
-    return {"person_found": True, "gender": gender, "confidence": round(conf, 3),
+    # person_found here is CLIP's opinion; the server overrides it with the human
+    # parser when available (CLIP reads plain-background photos as "product").
+    return {"person_found": scores["none"] < person, "gender": gender, "confidence": round(conf, 3),
             "scores": {k: round(v, 3) for k, v in scores.items()}}

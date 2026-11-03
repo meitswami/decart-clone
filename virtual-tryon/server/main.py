@@ -141,10 +141,25 @@ async def analyze_person(image: UploadFile = File(...)):
         return _err(413, "too_large", "Photos must be under 25 MB.")
     try:
         res = await run_in_threadpool(person_analysis.analyze, data)
+        parser = photo_tryon.load_parser() if photo_tryon._available() else None
+        if parser is not None:
+            res["person_found"] = await run_in_threadpool(_person_visible, parser, data)
+        if not res["person_found"]:
+            res.update(gender="unsure", confidence=0.0)
     except Exception:
         log.exception("analysis failed")
         return {"available": False}
     return {"available": True, **res}
+
+
+def _person_visible(parser, data: bytes) -> bool:
+    import io as _io
+
+    import numpy as np
+    from PIL import Image, ImageOps
+    img = ImageOps.exif_transpose(Image.open(_io.BytesIO(data))).convert("RGB")
+    lab = parser.predict(img)
+    return bool(np.isin(lab, [1, 2, 12, 13, 16]).mean() > 0.02)  # face, hair, arms, hands, torso
 
 
 # ---------- photo try-on ----------
