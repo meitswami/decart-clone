@@ -138,9 +138,10 @@ def semantic_mask(before: np.ndarray, after: np.ndarray, category: str,
         pa = parse(after)
         if pa.shape != (h, w):
             pa = cv2.resize(pa.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST)
-    else:  # live: the new garment = what changed on or right around the person
-        body = (pb != 0).astype(np.uint8)
-        r = max(3, int(min(h, w) * 0.06) | 1)
+    else:  # live: the new garment = what changed on the person's own clothes/skin
+        # (not the background around them: a moving camera turns that into a halo)
+        body = (np.isin(pb, ids(COVERAGE["one-pieces"] + SKIN["one-pieces"]))).astype(np.uint8)
+        r = max(3, int(min(h, w) * 0.012) | 1)
         near = cv2.dilate(body, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (r, r))) > 0
         pa = np.where(diff & near & ~np.isin(pb, ids(IDENTITY + ["hands"])), _IDS["top"], 0).astype(np.uint8)
         if category == "bottoms":
@@ -148,7 +149,7 @@ def semantic_mask(before: np.ndarray, after: np.ndarray, category: str,
     garment = np.isin(pb, ids(COVERAGE[category])) | np.isin(pa, ids(COVERAGE[category]))
     skin = (np.isin(pb, ids(SKIN[category])) | np.isin(pa, ids(SKIN[category]))) & diff
     m = (garment | skin).astype(np.uint8)
-    ks = max(3, int(min(h, w) * 0.012) | 1)
+    ks = max(3, int(min(h, w) * (0.012 if parse_after else 0.006)) | 1)
     k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (ks, ks))
     m = cv2.morphologyEx(m, cv2.MORPH_CLOSE, k, iterations=2)
     m = cv2.dilate(m, k, iterations=1)
