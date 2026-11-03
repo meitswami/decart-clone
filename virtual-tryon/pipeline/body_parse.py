@@ -196,7 +196,7 @@ class BodyParser:
         Searches from just above the hips down to the knees for the row where the
         clothes colour changes most (shirt hem over trousers, kurta hem over
         churidar). If nothing changes (one long garment, or matching colours),
-        everything down to the knees counts as the upper garment."""
+        it is treated as one garment down to the knees."""
         h = mp_lab.shape[0]
         clothes = mp_lab == MP_CLOTHES
 
@@ -215,7 +215,8 @@ class BodyParser:
             top, bot = float(ys.min()), float(ys.max())
             torso = 0.3 * (bot - top)
             hip_y, knee_y = top + 0.5 * (bot - top), top + 0.72 * (bot - top)
-        lo, hi = int(max(0, hip_y - 0.15 * torso)), int(min(h - 1, max(knee_y, hip_y + 0.5 * torso)))
+        # tops can end at the waist (above the hip joints) or at the knee (kurtas)
+        lo, hi = int(max(0, hip_y - 0.45 * torso)), int(min(h - 1, max(knee_y, hip_y + 0.5 * torso)))
         k = max(4, int(0.12 * torso))
         cnt = clothes.sum(1).astype(np.float32)
         if hi - lo < 2 * k or cnt[lo:hi].max() < 4:
@@ -238,7 +239,10 @@ class BodyParser:
                 best_y, best_d = y, d
         if best_y is not None and best_d >= 15.0:
             return float(best_y)
-        return float(hi)  # no clear change: one garment down to the knees
+        # No clear colour change (one long garment, or top and trousers in the same
+        # colour): treat it as one garment down to the knees. Better a little
+        # trouser in the garment picture than a shirt cut in half.
+        return float(hi)
 
     def _to_labels(self, mp_lab: np.ndarray, pts, rgb_lab: np.ndarray) -> np.ndarray:
         h, w = mp_lab.shape
