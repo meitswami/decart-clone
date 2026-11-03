@@ -18,9 +18,11 @@ How:
 """
 from __future__ import annotations
 
+import hashlib
 import math
 import os
 import threading
+from collections import OrderedDict
 from pathlib import Path
 
 import cv2
@@ -35,6 +37,7 @@ MODEL_DIR = Path(os.environ.get("MEDIAPIPE_MODELS", "/workspace/vto/models/media
 SEG_MODEL = "selfie_multiclass_256x256.tflite"
 POSE_MODEL = "pose_landmarker_heavy.task"
 WORK_LONG_SIDE = 1536  # parse at most at this size, then scale labels back up
+FAST_MAX_PIXELS = 360_000  # live-sized frames (<= 640x480 + margin) skip the tiled pass
 
 # pose landmark ids
 L_SHOULDER, R_SHOULDER, L_HIP, R_HIP, L_KNEE, R_KNEE = 11, 12, 23, 24, 25, 26
@@ -73,6 +76,10 @@ class BodyParser:
             base_options=BaseOptions(model_asset_path=str(model_dir / POSE_MODEL)),
             num_poses=1, min_pose_detection_confidence=0.3, min_pose_presence_confidence=0.3))
         self._lock = threading.Lock()
+        # The same picture is often parsed twice in one try-on (FASHN's own
+        # preprocessing, then our paste-back mask) and the same garment on every
+        # live keyframe: remember the last few results.
+        self._cache: OrderedDict[bytes, np.ndarray] = OrderedDict()
 
     # ---------- MediaPipe calls ----------
     def _mp_image(self, rgb: np.ndarray):
@@ -106,6 +113,8 @@ class BodyParser:
     def _confidences(self, rgb: np.ndarray) -> np.ndarray:
         h, w = rgb.shape[:2]
         conf = self._seg_square(rgb)  # coarse pass over the whole photo
+        if h * w <= FAST_MAX_PIXELS:  # live camera frames: one pass is enough and keeps keyframes quick
+            return conf
         person = conf[..., MP_BG] < 0.5
         ys, xs = np.nonzero(person)
         if ys.size < 0.002 * h * w:
@@ -149,7 +158,21 @@ class BodyParser:
         rgb = np.asarray(image.convert("RGB") if hasattr(image, "convert") else image)
         if rgb.ndim == 2:
             rgb = cv2.cvtColor(rgb, cv2.COLOR_GRAY2RGB)
-        rgb = rgb[..., :3]
+        rgb = np.ascontiguousarray(rgb[..., :3])
+        key = hashlib.blake2b(rgb.tobytes(), digest_size=16, person=str(rgb.shape).encode()[:16]).digest()
+        with self._lock:
+            hit = self._cache.get(key)
+            if hit is not None:
+                self._cache.move_to_end(key)
+                return hit.copy()
+        lab = self._predict(rgb)
+        with self._lock:
+            self._cache[key] = lab
+            while len(self._cache) > 8:
+                self._cache.popitem(last=False)
+        return lab.copy()
+
+    def _predict(self, rgb: np.ndarray) -> np.ndarray:
         H, W = rgb.shape[:2]
         sc = min(1.0, WORK_LONG_SIDE / max(H, W))
         work = cv2.resize(rgb, (int(round(W * sc)), int(round(H * sc))), interpolation=cv2.INTER_AREA) if sc < 1 else rgb

@@ -8,7 +8,7 @@ cd /workspace/app/virtual-tryon || { echo "no code on the volume"; exit 1; }
 # that relied on the big CUDA image's system packages.
 if [ -x /workspace/env312/bin/python ]; then ENV=/workspace/env312; else ENV=/workspace/venv; fi
 . "$ENV/bin/activate"
-export LD_LIBRARY_PATH="$(ls -d $ENV/lib/python3*/site-packages/nvidia/*/lib /usr/local/lib/python3*/dist-packages/nvidia/*/lib 2>/dev/null | tr '\n' ':')${LD_LIBRARY_PATH:-}"
+export LD_LIBRARY_PATH="$(ls -d $ENV/lib/python3*/site-packages/nvidia/*/lib /usr/local/lib/python3*/dist-packages/nvidia/*/lib $ENV/syslib/usr/lib/x86_64-linux-gnu 2>/dev/null | tr '\n' ':')${LD_LIBRARY_PATH:-}"
 export FASHN_WEIGHTS_DIR=/workspace/vto/models/fashn-vton-1.5/weights
 export ESRGAN_WEIGHTS=/workspace/vto/models/RealESRGAN_x4plus.pth
 export HF_HOME=/workspace/hf KEEPALIVE=/workspace/.keepalive KEEPALIVE_FILE=/workspace/.keepalive

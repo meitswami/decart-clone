@@ -8,6 +8,17 @@ ENV=/workspace/env312
 # have opencv-python-headless and only need these extras.
 pip install -q --no-deps "mediapipe==1.2.0"
 pip install -q "absl-py~=2.3" "flatbuffers~=25.9" certifi matplotlib
+# MediaPipe's C library links libEGL (OpenGL ES loader) even on CPU. The slim
+# base image has none, so keep the Debian libs next to the env on the volume.
+SYS="$ENV/syslib"
+if [ ! -e "$SYS/usr/lib/x86_64-linux-gnu/libEGL.so.1" ]; then
+  apt-get update -qq
+  mkdir -p /tmp/debs "$SYS" && cd /tmp/debs
+  apt-get download -qq libegl1 libglvnd0 libgles2 libgl1 libglx0 libopengl0
+  for d in *.deb; do dpkg -x "$d" "$SYS"; done
+  cd - >/dev/null
+fi
+export LD_LIBRARY_PATH="$SYS/usr/lib/x86_64-linux-gnu${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 M=/workspace/vto/models/mediapipe
 mkdir -p "$M"
 python - <<'PY'
@@ -23,5 +34,12 @@ for name, path in files.items():
         urllib.request.urlretrieve(base + path, dst + ".part"); os.replace(dst + ".part", dst)
     print(name, os.path.getsize(dst))
 PY
-python -c "import mediapipe, sys; sys.path.insert(0, '/workspace/app/virtual-tryon'); from pipeline import body_parse as b; print('mediapipe', mediapipe.__version__, 'parser ok:', b.available())"
+MEDIAPIPE_MODELS="$M" python - <<'PY'
+import sys, numpy as np
+sys.path.insert(0, "/workspace/app/virtual-tryon")
+from pipeline import body_parse as b
+p = b.get()  # really loads the models (needs libEGL), not just the import
+lab = p.predict(np.full((480, 360, 3), 128, np.uint8))
+print("parser ok:", p is not None, lab.shape)
+PY
 echo MEDIAPIPE_DONE

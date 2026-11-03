@@ -6,10 +6,11 @@ set -x
 cd /workspace/app/virtual-tryon
 bash scripts/setup_mediapipe.sh > /workspace/ab/setup.log 2>&1
 . /workspace/env312/bin/activate
-export LD_LIBRARY_PATH="$(ls -d /workspace/env312/lib/python3*/site-packages/nvidia/*/lib | tr '\n' ':')"
+export LD_LIBRARY_PATH="$(ls -d /workspace/env312/lib/python3*/site-packages/nvidia/*/lib /workspace/env312/syslib/usr/lib/x86_64-linux-gnu | tr '\n' ':')"
 export FASHN_WEIGHTS_DIR=/workspace/vto/models/fashn-vton-1.5/weights ESRGAN_WEIGHTS=/workspace/vto/models/RealESRGAN_x4plus.pth
 export HF_HOME=/workspace/hf MEDIAPIPE_MODELS=/workspace/vto/models/mediapipe
-PYTHONPATH=/workspace/app/virtual-tryon python scripts/ab_parser.py fashn /workspace/ab > /workspace/ab/fashn.log 2>&1
+case " ${AB_MODES:-fashn mediapipe} " in *" fashn "*)
+  PYTHONPATH=/workspace/app/virtual-tryon python scripts/ab_parser.py fashn /workspace/ab > /workspace/ab/fashn.log 2>&1 ;; esac
 PYTHONPATH=/workspace/app/virtual-tryon/shims:/workspace/app/virtual-tryon python scripts/ab_parser.py mediapipe /workspace/ab > /workspace/ab/mediapipe.log 2>&1
 echo ALL_DONE > /workspace/ab/done.txt
 sleep "${HOLD_SECONDS:-1200}"
