@@ -60,6 +60,13 @@ def _warm() -> None:
     threading.Thread(target=go, daemon=True).start()
 
 
+@app.on_event("startup")
+async def _gpu_guard() -> None:
+    if settings.gpu_mode == "runpod":
+        import asyncio
+        asyncio.create_task(gpu.guard())
+
+
 def _touch() -> None:
     """Real use keeps the GPU box awake (see scripts/pod_watchdog.sh)."""
     try:
@@ -149,6 +156,7 @@ async def analyze_person(image: UploadFile = File(...)):
     if len(data) > 25_000_000:
         return _err(413, "too_large", "Photos must be under 25 MB.")
     if _pool():  # only when the GPU is already awake; never wakes it by itself
+        gpu.touch()
         if not await gpu.is_ready():
             return {"available": True, "asleep": True}
         import httpx
@@ -208,8 +216,10 @@ async def photo_tryon_ep(person: UploadFile = File(...),
     if len(p) > 25_000_000 or len(g) > 25_000_000:
         return _err(413, "too_large", "Photos must be under 25 MB.")
     t = time.time()
-    if _pool() and not await gpu.is_ready():
-        return _asleep()
+    if _pool():
+        gpu.touch()
+        if not await gpu.is_ready():
+            return _asleep()
     try:
         if _pool():
             out, _info = await run_in_threadpool(
@@ -256,8 +266,10 @@ async def live_token(request: Request,
 
     store_id = store_id.strip()[:64] or "demo"
     use_hosted = settings.live_backend == "decart" and bool(settings.decart_api_key) and engine != "gpu"
-    if not use_hosted and _pool() and not await gpu.is_ready():
-        return _asleep()  # page wakes the GPU (with a loader) and asks again
+    if not use_hosted and _pool():
+        gpu.touch()
+        if not await gpu.is_ready():
+            return _asleep()  # page wakes the GPU (with a loader) and asks again
     wait = sessions.rate_limit_wait_minutes(_client_ip(request))
     if wait:
         return _err(429, "rate_limited",

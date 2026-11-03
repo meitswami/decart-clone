@@ -39,6 +39,7 @@ class GpuPool:
         self._live: dict = {"state": "unknown"}
         self._ip_hits: dict[str, list[float]] = {}
         self._ready_cache = (0.0, False)
+        self._last_activity = time.time()
         self._state_file = Path(settings.gpu_state_file)
         self._state = self._load()
 
@@ -116,8 +117,13 @@ class GpuPool:
             "gpuTypeIds": [g.strip() for g in settings.gpu_types.split(",") if g.strip()],
             "gpuTypePriority": "custom", "networkVolumeId": volume,
             "volumeMountPath": "/workspace", "containerDiskInGb": 30, "ports": ["8000/http"], "env": env,
+            # Update the code on the volume FIRST (the boot script itself may be
+            # new), then boot our services in the background and hand over to
+            # the image's normal start script.
             "dockerStartCmd": ["bash", "-c",
-                               "bash /workspace/app/virtual-tryon/scripts/pod_boot.sh & exec /start.sh"],
+                               "(cd /workspace/app && timeout 90 git fetch -q --depth 1 origin \"${GIT_BRANCH:-main}\" "
+                               "&& git reset -q --hard FETCH_HEAD; "
+                               "bash /workspace/app/virtual-tryon/scripts/pod_boot.sh) & exec /start.sh"],
         }
         r = await c.post(f"{settings.runpod_rest_url}/pods", json=body, headers=self._auth())
         if r.status_code >= 300:
@@ -130,6 +136,42 @@ class GpuPool:
             return r.status_code == 200 and bool(r.json().get("model_loaded"))
         except Exception:
             return False
+
+    async def _stop(self, c: httpx.AsyncClient) -> None:
+        if self.pod_id:
+            await self._gql(c, "mutation($i: PodStopInput!) { podStop(input: $i) { id } }",
+                            {"i": {"podId": self.pod_id}})
+            self._ready_cache = (time.time(), False)
+
+    def touch(self) -> None:
+        """A shopper did something that needs the GPU (backup idle timer)."""
+        self._last_activity = time.time()
+
+    async def guard(self) -> None:
+        """Safety net beside the GPU's own watchdog: stop the GPU if it runs with
+        no try-on activity for GPU_IDLE_MINUTES + 10, or never becomes healthy."""
+        unhealthy_since = None
+        while True:
+            await asyncio.sleep(60)
+            try:
+                if not self.pod_id or (self._task and not self._task.done()):
+                    unhealthy_since = None
+                    continue
+                async with httpx.AsyncClient(timeout=20) as c:
+                    pod = await self._pod(c)
+                    if not pod or pod.get("desiredStatus") != "RUNNING":
+                        unhealthy_since = None
+                        continue
+                    now = time.time()
+                    unhealthy_since = None if await self._healthy(c) else (unhealthy_since or now)
+                    idle = now - self._last_activity
+                    if (unhealthy_since and now - unhealthy_since > 600) or idle > (settings.gpu_idle_minutes + 10) * 60:
+                        log.warning("guard: stopping GPU %s (idle %.0fs, unhealthy %s)", self.pod_id, idle,
+                                    bool(unhealthy_since))
+                        await self._stop(c)
+                        unhealthy_since = None
+            except Exception:
+                log.exception("guard check failed")
 
     # ---------- public ----------
     async def is_ready(self) -> bool:
@@ -166,6 +208,7 @@ class GpuPool:
         return True
 
     async def wake(self, ip: str) -> dict:
+        self.touch()
         if settings.gpu_mode != "runpod" or not settings.runpod_api_key or not settings.gpu_network_volume:
             return {"state": "unavailable", "message": "Try-on servers aren't configured."}
         async with self._lock:
@@ -240,6 +283,14 @@ class GpuPool:
                    if "no_gpu" in str(e) else "The try-on servers didn't start. Please try again.")
             log.warning("GPU wake failed: %s", e)
             self._save()
+            try:  # never leave a half-started GPU billing
+                async with httpx.AsyncClient(timeout=30) as c:
+                    pod = await self._pod(c)
+                    if pod and pod.get("desiredStatus") == "RUNNING":
+                        await self._stop(c)
+                        log.warning("stopped GPU %s after failed wake", self.pod_id)
+            except Exception:
+                log.exception("could not stop GPU after failed wake")
             self._live = {"state": "unavailable", "message": msg, "at": time.time()}
 
 
