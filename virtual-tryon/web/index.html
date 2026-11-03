@@ -32,7 +32,11 @@
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(76px,1fr));gap:8px;margin:12px 0 4px}
   .grid button{border:2px solid transparent;border-radius:12px;padding:0;background:#fff;cursor:pointer;aspect-ratio:3/4;overflow:hidden}
   .grid button[aria-pressed=true]{border-color:var(--accent)}
-  .grid img{width:100%;height:100%;object-fit:cover;display:block}
+  .grid img{width:100%;height:100%;object-fit:cover;object-position:center 30%;display:block}
+  .filters{gap:6px;margin:10px 0 0}
+  .pill{border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:999px;padding:6px 14px;font:inherit;font-size:14px;cursor:pointer}
+  .pill[aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:#fff}
+  .grid button[hidden]{display:none}
   .preview{display:flex;gap:12px;align-items:flex-start;margin-top:10px}
   .preview img{width:96px;height:128px;object-fit:cover;border-radius:12px;border:1px solid var(--line);background:#fff;flex:none}
   .chip{display:inline-flex;gap:6px;align-items:center;background:var(--chip);border-radius:999px;padding:5px 11px;font-size:14px}
@@ -70,7 +74,12 @@
       <label class="btn" for="garmentFile">⬆ Upload garment photo</label>
       <input id="garmentFile" type="file" accept="image/*" hidden/>
     </div>
-    <div class="muted">or pick a sample:</div>
+    <div class="muted">or pick from the collection:</div>
+    <div class="row filters" id="sampleFilters" role="group" aria-label="Show garments for" hidden>
+      <button type="button" class="pill" data-f="all" aria-pressed="true">All</button>
+      <button type="button" class="pill" data-f="women" aria-pressed="false">Women</button>
+      <button type="button" class="pill" data-f="men" aria-pressed="false">Men</button>
+    </div>
     <div class="grid" id="samples"></div>
     <div class="preview" id="garmentPreviewBox" hidden>
       <img id="garmentPreview" alt="Selected garment"/>
@@ -203,6 +212,6 @@
     <div class="row" style="justify-content:flex-end;margin-bottom:0"><button class="btn" id="wakeCancel" type="button">Cancel</button></div>
   </div>
 </div>
-<script type="module" src="/app.js?v=f29a748b9312"></script>
+<script type="module" src="/app.js?v=dc289d67f032"></script>
 </body>
 </html>

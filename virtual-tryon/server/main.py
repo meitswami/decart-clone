@@ -28,7 +28,7 @@ app = FastAPI(title="Virtual Try-On", docs_url=None, redoc_url=None)
 
 _HERE = Path(__file__).resolve().parent.parent
 _WEB_DIR = _HERE / "web"
-_SAMPLES_DIR = _HERE.parent / "public" / "garments"  # MIT samples shipped with the repo
+_SAMPLES_DIR = _WEB_DIR / "garments"  # store catalogue: catalog.json + images + thumbs
 
 
 @app.middleware("http")
@@ -255,7 +255,7 @@ async def live_token(request: Request,
     """Start a live session: checks origin, access code, per-visitor and
     per-store limits, then hands out a short-lived key (hosted backend) or a
     signed ticket (our GPU engine). The real keys stay here.
-    engine="gpu" asks for our own GPU engine even when the hosted one is set up.
+    engine="gpu" / "hosted" overrides LIVE_DEFAULT_ENGINE for this session.
     """
     origin = settings.origin
     if origin and (request.headers.get("origin") or "").lower() != origin:
@@ -265,7 +265,10 @@ async def live_token(request: Request,
         return _err(401, "access_code", "That access code isn't right.")
 
     store_id = store_id.strip()[:64] or "demo"
-    use_hosted = settings.live_backend == "decart" and bool(settings.decart_api_key) and engine != "gpu"
+    can_gpu = _pool() or settings.live_backend == "local"
+    want_hosted = engine == "hosted" or (engine != "gpu" and (
+        settings.live_default_engine == "hosted" or not can_gpu))
+    use_hosted = settings.live_backend == "decart" and bool(settings.decart_api_key) and want_hosted
     if not use_hosted and _pool():
         gpu.touch()
         if not await gpu.is_ready():

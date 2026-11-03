@@ -1,0 +1,137 @@
+[
+ {
+  "id": "white-henley-shirt",
+  "name": "White Printed Henley Shirt",
+  "image": "/garments/white-henley-shirt.jpg",
+  "thumb": "/garments/thumbs/white-henley-shirt.jpg",
+  "type": "upper_body",
+  "for": "men",
+  "prompt": "Substitute the current top with a white long-sleeve henley shirt with a navy geometric block-print panel on the chest and printed cuffs"
+ },
+ {
+  "id": "black-floral-kurta",
+  "name": "Black Floral Kurta",
+  "image": "/garments/black-floral-kurta.jpg",
+  "thumb": "/garments/thumbs/black-floral-kurta.jpg",
+  "type": "dresses",
+  "for": "men",
+  "prompt": "Substitute the current outfit with a black knee-length kurta with large red and green floral print, worn with black trousers"
+ },
+ {
+  "id": "pastel-floral-kurta",
+  "name": "Pastel Floral Kurta",
+  "image": "/garments/pastel-floral-kurta.jpg",
+  "thumb": "/garments/thumbs/pastel-floral-kurta.jpg",
+  "type": "dresses",
+  "for": "men",
+  "prompt": "Substitute the current outfit with an ivory knee-length kurta with pastel pink, orange and blue floral print"
+ },
+ {
+  "id": "pink-peacock-kurta-dhoti",
+  "name": "Pink Peacock Kurta & Dhoti",
+  "image": "/garments/pink-peacock-kurta-dhoti.jpg",
+  "thumb": "/garments/thumbs/pink-peacock-kurta-dhoti.jpg",
+  "type": "dresses",
+  "for": "men",
+  "prompt": "Substitute the current outfit with a pink knee-length kurta with a peacock and tree print at the hem, worn with a white dhoti"
+ },
+ {
+  "id": "navy-angrakha-dhoti",
+  "name": "Navy Angrakha Kurta & Dhoti",
+  "image": "/garments/navy-angrakha-dhoti.jpg",
+  "thumb": "/garments/thumbs/navy-angrakha-dhoti.jpg",
+  "type": "dresses",
+  "for": "men",
+  "prompt": "Substitute the current outfit with a navy blue angrakha kurta with gold embroidery and tie strings, worn with an ivory dhoti"
+ },
+ {
+  "id": "peach-printed-kurta-set",
+  "name": "Peach Printed Kurta Set",
+  "image": "/garments/peach-printed-kurta-set.jpg",
+  "thumb": "/garments/thumbs/peach-printed-kurta-set.jpg",
+  "type": "dresses",
+  "for": "men",
+  "prompt": "Substitute the current outfit with a peach knee-length kurta with a printed palace scene at the hem, worn with white trousers"
+ },
+ {
+  "id": "black-kurta-red-panel",
+  "name": "Black Kurta with Red Panel",
+  "image": "/garments/black-kurta-red-panel.jpg",
+  "thumb": "/garments/thumbs/black-kurta-red-panel.jpg",
+  "type": "dresses",
+  "for": "men",
+  "prompt": "Substitute the current outfit with a black knee-length kurta with a red and white woven panel down the front, worn with a beige dhoti"
+ },
+ {
+  "id": "rust-tissue-kurta-set",
+  "name": "Rust Tissue Kurta Set",
+  "image": "/garments/rust-tissue-kurta-set.jpg",
+  "thumb": "/garments/thumbs/rust-tissue-kurta-set.jpg",
+  "type": "dresses",
+  "for": "women",
+  "prompt": "Substitute the current outfit with a rust orange shimmering tissue A-line kurta with matching trousers and a sheer dupatta"
+ },
+ {
+  "id": "blue-organza-saree",
+  "name": "Blue Organza Saree",
+  "image": "/garments/blue-organza-saree.jpg",
+  "thumb": "/garments/thumbs/blue-organza-saree.jpg",
+  "type": "dresses",
+  "for": "women",
+  "prompt": "Substitute the current outfit with a powder blue organza saree with gold polka dots, gold fringe border and a sleeveless blouse"
+ },
+ {
+  "id": "yellow-silk-saree",
+  "name": "Yellow Silk Saree",
+  "image": "/garments/yellow-silk-saree.jpg",
+  "thumb": "/garments/thumbs/yellow-silk-saree.jpg",
+  "type": "dresses",
+  "for": "women",
+  "prompt": "Substitute the current outfit with a mustard yellow silk saree with gold motifs and border, worn with an emerald green embroidered blouse"
+ },
+ {
+  "id": "blue-patchwork-saree",
+  "name": "Blue Patchwork Saree",
+  "image": "/garments/blue-patchwork-saree.jpg",
+  "thumb": "/garments/thumbs/blue-patchwork-saree.jpg",
+  "type": "dresses",
+  "for": "women",
+  "prompt": "Substitute the current outfit with a blue and green patchwork print saree with mirror work and a multicolour blouse"
+ },
+ {
+  "id": "yellow-skirt-set-pink-cape",
+  "name": "Yellow Skirt Set with Pink Cape",
+  "image": "/garments/yellow-skirt-set-pink-cape.jpg",
+  "thumb": "/garments/thumbs/yellow-skirt-set-pink-cape.jpg",
+  "type": "dresses",
+  "for": "women",
+  "prompt": "Substitute the current outfit with a yellow sweetheart crop top and flared skirt with an embellished belt and a pink cape with gota border"
+ },
+ {
+  "id": "ivory-gota-sharara-set",
+  "name": "Ivory Gota Sharara Set",
+  "image": "/garments/ivory-gota-sharara-set.jpg",
+  "thumb": "/garments/thumbs/ivory-gota-sharara-set.jpg",
+  "type": "dresses",
+  "for": "women",
+  "prompt": "Substitute the current outfit with an ivory kurta and sharara with gold gota patti work and an orange dupatta"
+ },
+ {
+  "id": "pink-floral-sharara-set",
+  "name": "Pink Floral Sharara Set",
+  "image": "/garments/pink-floral-sharara-set.jpg",
+  "thumb": "/garments/thumbs/pink-floral-sharara-set.jpg",
+  "type": "dresses",
+  "for": "women",
+  "prompt": "Substitute the current outfit with a pink floral print halter kurta and sharara with an embroidered pink dupatta"
+ },
+ {
+  "id": "olive-cutwork-suit",
+  "name": "Olive Cutwork Suit",
+  "image": "/garments/olive-cutwork-suit.jpg",
+  "thumb": "/garments/thumbs/olive-cutwork-suit.jpg",
+  "type": "dresses",
+  "for": "women",
+  "prompt": "Substitute the current outfit with an olive green straight suit with cutwork embroidery, matching trousers and a sheer dupatta"
+ }
+]

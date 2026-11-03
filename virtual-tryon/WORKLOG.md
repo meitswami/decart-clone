@@ -224,3 +224,23 @@ Rules we follow:
 - All test GPUs stopped (`xf2a30tmkzxhny`, `lsz70xp9ydj40a` cleaned up by the site, `z14q2aclblm2ft`).
 - PR #8 opened (PR #7 was merged by the owner earlier).
 - Next speed-up idea: model loading from the network volume (~190 s) is now the biggest part of a cold start.
+
+### 17:11 — Owner ran the installer on the VPS: new site live on the main domain
+- Live checks: new page served, GPU asleep (estimate 330 s).
+- Real wake-up through the live site: **206 s** (GPU found quickly).
+- 4K photo (2560×3840) and fit estimate (male 99.9%) worked through the live site.
+
+### 17:16 — Owner's collection added, old samples removed; person and background must never change
+- 15 of the 16 garments the owner sent went into a new catalogue at `virtual-tryon/web/garments/`, each with a thumbnail:
+  - 7 men's: henley shirt plus kurta sets.
+  - 8 women's: sarees, sharara sets, suits, skirt set.
+- The 16th photo (a mirror selfie wearing the same black floral kurta) was used as a test person photo, not as a product.
+- The old samples in `public/garments` stay as they were, for the old app and rollback.
+- Men / Women filter, set automatically from the AI estimate until the shopper picks one.
+- **Photo tests through the live site** (14–16 s each). Face, hands, hair and background were unchanged, with only the outfit replaced:
+  - pink peacock kurta and dhoti on a man in a mirror selfie;
+  - olive suit on a woman wearing a saree;
+  - blue organza saree on a woman wearing a suit;
+  - white henley shirt on a seated man;
+  - pink sharara set on a woman wearing a sharara set.
+- **Live default changed to our GPU engine.** It repaints only the garment area on the real camera picture, so the person and background are untouched. The hosted engine redraws the whole frame; it is still available with `?engine=hosted` or `LIVE_DEFAULT_ENGINE=hosted`.
