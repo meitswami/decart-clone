@@ -184,6 +184,19 @@ def garment_mask_fn(category: str, fast: bool = False):
     return lambda before, after: semantic_mask(before, after, category, parse, parse_after=not fast)
 
 
+def warm_up() -> None:
+    """Run one live-preset try-on and one 4K paste-back on FASHN's own example
+    pictures, so CUDA kernels, the pose model and the parser are ready."""
+    ex = Path(os.environ.get("WARM_EXAMPLES", "/workspace/vto/fashn-vton-1.5/examples/data"))
+    person_p, garment_p = ex / "model.webp", ex / "garment.webp"
+    if not (person_p.exists() and garment_p.exists()):
+        log.info("warm-up skipped (no example pictures at %s)", ex)
+        return
+    t = time.time()
+    run_local(person_p.read_bytes(), garment_p.read_bytes(), "tops", quality="live", target_long_side=1024)
+    log.info("warm-up try-on done in %.1fs", time.time() - t)
+
+
 def person_box_fn():
     """Returns box(rgb) -> (x0, y0, x1, y1) around the person, grown to the model's
     aspect with room for flared or draped garments; None when the person already
