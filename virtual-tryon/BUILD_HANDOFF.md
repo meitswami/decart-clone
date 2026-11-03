@@ -656,8 +656,10 @@ limits_state.json
 - [x] Decart token API wired in `/live/token` (`server/decart_tokens.py`, `POST /v1/client/tokens`), browser live client in `web/src/app.js`. Python app now defaults to port 3071 (3070 = production Node app).
 - [ ] Confirm Decart ToS on training from output → decides `RECORD_OUTPUT_FRAMES`.
 - [ ] Pin exact StreamDiffusionV2 + FlashVSR commits after a working run.
-- [ ] Wire FASHN `.tryon()` to its real API from the cloned repo.
-- [ ] WebRTC client ↔ `local` engine (aiortc) in `web/index.html` + `live_server.py`.
+- [x] FASHN wired (`pipeline/photo_tryon.py`: `TryOnPipeline(weights_dir)(person_image, garment_image, category, garment_photo_type, num_timesteps, guidance_scale, seed, segmentation_free)`); verify kwargs on first GPU run.
+- [x] WebRTC client ↔ `local` engine done (`webrtc/live_server.py`, `web/src/app.js`), tested in headless Chrome.
+- [ ] TURN relay (coturn on the VPS) so live works from shoppers' real networks to the pod.
+- [ ] Run `scripts/gpu_setup.sh` on the pod (needs owner approval), then measure real keyframe latency.
 - [ ] Per-garment "good enough?" check before switching a store decart→local.
 
 ## 9. Environment gotchas (from the session that wrote this)

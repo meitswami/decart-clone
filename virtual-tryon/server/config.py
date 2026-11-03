@@ -27,7 +27,24 @@ class Settings(BaseSettings):
     trust_proxy: bool = False
     tokens_per_ip_per_hour: int = 10
 
+    # Our own live engine on the GPU box (LIVE_BACKEND=local). Public HTTPS URL,
+    # e.g. https://<pod-id>-8900.proxy.runpod.net. ENGINE_SECRET is shared with
+    # the GPU box and signs per-session tickets.
     gpu_engine_url: str = "http://127.0.0.1:8900"
+    engine_secret: str = ""
+    # WebRTC ICE servers for the local engine, as JSON. Pods take no inbound
+    # UDP, so production needs a TURN relay (e.g. coturn on the VPS).
+    ice_servers: str = '[{"urls": "stun:stun.l.google.com:19302"}]'
+    # "ws" = frames over a WebSocket on the page's own origin (works through
+    # RunPod's HTTPS proxy and on mobile data); "webrtc" = webrtc/live_server.py.
+    live_transport: str = "ws"
+    engine_max_sessions: int = 2
+    live_key_interval: float = 1.0
+    keepalive_file: str = "/workspace/.keepalive"
+
+    # Consented training captures (photos, live frames, videos) + admin gallery.
+    captures_dir: str = "./data/captures"
+    admin_token: str = ""
 
     max_session_seconds: int = 20
     per_store_daily_sessions: int = 100
