@@ -83,19 +83,25 @@ GPU_PRIORITY = [
 ]
 
 
-def create_rest(env: dict[str, str], cloud: str = "SECURE", gpus: list[str] | None = None) -> dict:
+# Closest to India first: lower live latency for shoppers there.
+DC_PRIORITY = ["AP-IN-1", "AP-IN-2", "AP-IN-3", "SEA-SG-1", "AP-JP-1",
+               "EU-RO-1", "EU-CZ-1", "EU-NL-1", "EU-FR-1", "EU-SE-1"]
+
+
+def create_rest(env: dict[str, str], cloud: str = "SECURE", gpus: list[str] | None = None,
+                datacenters: list[str] | None = None) -> dict:
     """Create via the REST API, which accepts a priority list of GPU types."""
     key = os.environ.get("RUNPOD_API_KEY") or sys.exit("RUNPOD_API_KEY is not set")
     body = {
         "name": NAME, "imageName": IMAGE, "cloudType": cloud, "gpuCount": 1,
         "gpuTypeIds": gpus or GPU_PRIORITY, "gpuTypePriority": "custom",
-        "allowedCudaVersions": ["12.8", "12.9", "13.0"],  # image is CUDA 12.8.1
         "containerDiskInGb": int(os.environ.get("CONTAINER_GB", 40)),
         "volumeInGb": int(os.environ.get("VOLUME_GB", 80)), "volumeMountPath": "/workspace",
-        "minRAMPerGPU": int(os.environ.get("MIN_MEM_GB", 24)),
-        "minVCPUPerGPU": int(os.environ.get("MIN_VCPU", 6)),
         "ports": ["8888/http", "8000/http", "8900/http", "22/tcp"], "env": env,
     }
+    if datacenters:
+        body["dataCenterIds"] = datacenters
+        body["dataCenterPriority"] = "custom"
     req = urllib.request.Request("https://rest.runpod.io/v1/pods", data=json.dumps(body).encode(),
                                  headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
                                           "User-Agent": "vto-pod-helper/1.0"})

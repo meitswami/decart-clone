@@ -27,11 +27,11 @@ def _unb64(s: str) -> bytes:
 
 
 def mint_ticket(secret: str, *, session_id: str, store_id: str, max_seconds: int,
-                ttl: int = 60) -> str:
+                ttl: int = 60, **extra) -> str:
     if not secret:
         raise TicketError("ENGINE_SECRET not set")
     body = _b64(json.dumps({"sid": session_id, "store_id": store_id, "max_seconds": max_seconds,
-                            "exp": int(time.time()) + ttl}, separators=(",", ":")).encode())
+                            "exp": int(time.time()) + ttl, **extra}, separators=(",", ":")).encode())
     sig = _b64(hmac.new(secret.encode(), body.encode(), hashlib.sha256).digest())
     return f"{body}.{sig}"
 

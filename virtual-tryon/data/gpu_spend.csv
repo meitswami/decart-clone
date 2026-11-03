@@ -1,3 +1,5 @@
 time_ist,event,pod_id,name,gpu,cost_per_hr_usd
 2026-11-03 12:41,create,k5qhy8mcfist46,vto-dev,,0.99
 2026-11-03 12:43,stop (in-pod self-stop test; install blocked pending approval),k5qhy8mcfist46,vto-dev,RTX 6000 Ada,0.99
+2026-11-03 13:06,create,e6jqwiwx664y7x,vto-dev,,1.19
+2026-11-03 13:07,stop,e6jqwiwx664y7x,vto-dev,RTX 5090,1.19

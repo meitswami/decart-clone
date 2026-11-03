@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<meta name="robots" content="noindex"/>
+<title>Captures</title>
+<style>
+  :root{--bg:#f6f5f2;--card:#fff;--fg:#17171a;--muted:#6b6b73;--line:#e6e4df;--accent:#5b4cf0}
+  @media (prefers-color-scheme:dark){:root{--bg:#0e0e10;--card:#18181b;--fg:#f4f4f5;--muted:#a1a1aa;--line:#2a2a2e;--accent:#7c6ff7}}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  .wrap{max-width:1100px;margin:0 auto;padding:16px}
+  header{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-bottom:14px}
+  h1{font-size:20px;margin:0}
+  .muted{color:var(--muted);font-size:13px}
+  .btn{border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:10px;padding:9px 12px;text-decoration:none;font:inherit;cursor:pointer}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px}
+  .thumbs{display:flex;gap:6px;margin:8px 0;flex-wrap:wrap}
+  .thumbs a img{width:84px;height:112px;object-fit:cover;border-radius:8px;border:1px solid var(--line);display:block}
+  video{width:100%;border-radius:10px;margin-top:6px;background:#000}
+  .kv{font-size:13px;color:var(--muted)} .kv b{color:var(--fg);font-weight:600}
+  .pill{font-size:12px;border:1px solid var(--line);border-radius:999px;padding:2px 8px;margin-right:4px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div><h1>Saved try-on captures</h1><div class="muted" id="stats">Loading…</div></div>
+    <div><a class="btn" href="/admin/export.zip">⬇ Download everything (.zip)</a> <a class="btn" href="/">Open try-on</a></div>
+  </header>
+  <div class="grid" id="grid"></div>
+</div>
+<script>
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+(async () => {
+  const r = await fetch("/admin/api/captures");
+  if (!r.ok) { document.getElementById("stats").textContent = "Not authorised. Open /admin?token=YOUR_TOKEN"; return; }
+  const { stats, trials } = await r.json();
+  document.getElementById("stats").textContent = `${stats.trials} sessions · ${(stats.bytes / 1e6).toFixed(1)} MB`;
+  const grid = document.getElementById("grid");
+  for (const t of trials) {
+    const base = `/admin/file/${t.day}/${t.trial_id}/`;
+    const imgs = t.files.filter((f) => f.endsWith(".jpg") || f.endsWith(".png"));
+    const vids = t.files.filter((f) => f.endsWith(".webm") || f.endsWith(".mp4"));
+    const when = new Date((t.created || 0) * 1000).toLocaleString();
+    const g = t.gender_choice || t.gender_estimate || t.gender || "";
+    const el = document.createElement("div");
+    el.className = "card";
+    el.innerHTML = `
+      <div><span class="pill">${esc(t.kind || "?")}</span><span class="pill">${esc(t.category || "")}</span>${g ? `<span class="pill">${esc(g)}</span>` : ""}</div>
+      <div class="kv" style="margin-top:6px">${esc(when)} · <b>${esc(t.trial_id.slice(0, 8))}</b>
+        ${t.seconds ? ` · ${esc(t.seconds)} s` : ""}${t.live_seconds ? ` · live ${esc(t.live_seconds)} s, ${esc(t.live_frames)} frames` : ""}
+        ${t.live_frames ? "" : ""}</div>
+      <div class="thumbs">${imgs.map((f) => `<a href="${base}${esc(f)}" target="_blank" download><img loading="lazy" src="${base}${esc(f)}" alt="${esc(f)}"></a>`).join("")}</div>
+      ${vids.map((f) => `<video controls preload="metadata" src="${base}${esc(f)}"></video><a class="btn" style="display:inline-block;margin-top:6px" href="${base}${esc(f)}" download>⬇ Video</a>`).join("")}
+      ${t.live_frames ? `<div class="kv">${esc(t.live_frames)} camera frames saved (in the .zip)</div>` : ""}`;
+    grid.append(el);
+  }
+  if (!trials.length) grid.innerHTML = '<div class="muted">Nothing saved yet. Tick the consent box on the try-on page, then try a photo or live session.</div>';
+})();
+</script>
+</body>
+</html>

@@ -15,7 +15,7 @@ import threading
 import time
 from pathlib import Path
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageOps
 
 log = logging.getLogger("tryon.photo")
 
@@ -54,25 +54,44 @@ def load():
 
 
 def load_upscaler():
-    """Real-ESRGAN x4plus (BSD-3) if installed; None means Lanczos fallback."""
+    """Real-ESRGAN x4plus (BSD-3) via spandrel (MIT), tiled so 4K fits in VRAM.
+    None means Lanczos fallback (no GPU / not installed)."""
     global _UPSCALER
     if _UPSCALER is not None:
         return _UPSCALER or None
     try:
         import numpy as np
+        import spandrel
         import torch
-        from basicsr.archs.rrdbnet_arch import RRDBNet
-        from realesrgan import RealESRGANer
+        if not torch.cuda.is_available():
+            raise RuntimeError("no CUDA")
         path = Path(os.environ.get("ESRGAN_WEIGHTS", "models/RealESRGAN_x4plus.pth"))
-        net = RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=23, num_grow_ch=32, scale=4)
-        up = RealESRGANer(scale=4, model_path=str(path), model=net, tile=512, tile_pad=16,
-                          half=torch.cuda.is_available())
+        model = spandrel.ModelLoader().load_from_file(str(path)).cuda().eval()
+        half = model.supports_half
+        if half:
+            model.half()
+        scale = model.scale
+        TILE, PAD = 384, 16
 
+        @torch.inference_mode()
         def run(img_rgb):
-            out, _ = up.enhance(np.ascontiguousarray(img_rgb[..., ::-1]), outscale=4)  # BGR in/out
-            return out[..., ::-1].copy()
+            x = torch.from_numpy(np.ascontiguousarray(img_rgb)).cuda().permute(2, 0, 1)[None]
+            x = (x.half() if half else x.float()) / 255.0
+            _, _, h, w = x.shape
+            out = torch.zeros((1, 3, h * scale, w * scale), device="cuda", dtype=x.dtype)
+            for y0 in range(0, h, TILE):
+                for x0 in range(0, w, TILE):
+                    y1, x1 = min(y0 + TILE, h), min(x0 + TILE, w)
+                    py0, px0 = max(y0 - PAD, 0), max(x0 - PAD, 0)
+                    py1, px1 = min(y1 + PAD, h), min(x1 + PAD, w)
+                    t = model(x[:, :, py0:py1, px0:px1])
+                    oy, ox = (y0 - py0) * scale, (x0 - px0) * scale
+                    out[:, :, y0 * scale:y1 * scale, x0 * scale:x1 * scale] = \
+                        t[:, :, oy:oy + (y1 - y0) * scale, ox:ox + (x1 - x0) * scale]
+            return (out[0].clamp(0, 1) * 255).round().byte().permute(1, 2, 0).cpu().numpy()
         _UPSCALER = run
-    except Exception as e:  # not installed / no weights
+        log.info("Real-ESRGAN x%s loaded (half=%s)", scale, half)
+    except Exception as e:  # not installed / no weights / no GPU
         log.warning("Real-ESRGAN unavailable (%s); using Lanczos", e)
         _UPSCALER = False
     return _UPSCALER or None
@@ -95,8 +114,9 @@ def run_local(person_bytes: bytes, garment_bytes: bytes, category: str = "tops",
               garment_photo_type: str = "flat-lay", quality: str = "balanced",
               target_long_side: int | None = 3840, seed: int = 42) -> tuple[bytes, dict]:
     from .hires import compose_hires
-    person = Image.open(io.BytesIO(person_bytes)).convert("RGB")
-    garment = Image.open(io.BytesIO(garment_bytes)).convert("RGB")
+    # Phone photos carry their rotation in EXIF; apply it or people come out sideways.
+    person = ImageOps.exif_transpose(Image.open(io.BytesIO(person_bytes))).convert("RGB")
+    garment = ImageOps.exif_transpose(Image.open(io.BytesIO(garment_bytes))).convert("RGB")
     t = time.time()
     timing = {}
 
@@ -134,10 +154,10 @@ def run(person_png: bytes, garment_png: bytes, category: str, **opts) -> bytes:
     if _available():
         return run_local(person_png, garment_png, category, **opts)[0]
     # Dev stub: overlay a label so the pipeline is visibly wired end-to-end.
-    person = Image.open(io.BytesIO(person_png)).convert("RGB")
+    person = ImageOps.exif_transpose(Image.open(io.BytesIO(person_png))).convert("RGB")
     d = ImageDraw.Draw(person)
     d.rectangle([0, 0, person.width, 28], fill=(0, 0, 0))
     d.text((6, 6), f"[photo try-on stub • {category}]", fill=(255, 255, 255))
     buf = io.BytesIO()
-    person.save(buf, "PNG")
+    person.save(buf, "JPEG", quality=90)
     return buf.getvalue()

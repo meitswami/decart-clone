@@ -2,65 +2,183 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+<meta name="theme-color" content="#f6f5f2"/>
 <title>Try it on</title>
 <style>
-  :root { --bg:#0b0b0c; --fg:#f4f4f5; --muted:#a1a1aa; --accent:#6d5efc; --line:#27272a; --ok:#22c55e; --bad:#f87171; }
-  @media (prefers-color-scheme: light){ :root{ --bg:#fff; --fg:#111; --muted:#52525b; --line:#e4e4e7; --ok:#15803d; --bad:#b91c1c; } }
-  *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,sans-serif;}
-  .wrap{max-width:760px;margin:0 auto;padding:16px;}
-  .stage{position:relative}
-  video,img{width:100%;border-radius:14px;background:#222;display:block}
-  #out{position:absolute;inset:0;height:100%;object-fit:cover}
-  .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:12px 0;}
-  input[type=text],input[type=password],select{background:transparent;color:var(--fg);border:1px solid var(--line);
-       border-radius:10px;padding:10px 12px;font-size:15px;min-width:0;flex:1}
-  button{background:var(--accent);color:#fff;border:0;border-radius:10px;padding:12px 18px;font-size:16px;cursor:pointer;}
-  button:disabled{opacity:.45;cursor:default}
-  button.ghost{background:transparent;color:var(--fg);border:1px solid var(--line)}
-  label.consent{display:flex;gap:8px;align-items:flex-start;font-size:14px;opacity:.9;margin:12px 0;}
-  .hint{color:var(--muted);font-size:14px;}
-  #status[data-tone=ok]{color:var(--ok)} #status[data-tone=error]{color:var(--bad)}
-  #timer{font-variant-numeric:tabular-nums;color:var(--muted);font-size:14px}
+  :root{--bg:#f6f5f2;--card:#fff;--fg:#17171a;--muted:#6b6b73;--line:#e6e4df;--accent:#5b4cf0;--accent-fg:#fff;
+        --ok:#15803d;--bad:#b42318;--chip:#f0eefc;--r:16px}
+  @media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#0e0e10;--card:#18181b;--fg:#f4f4f5;--muted:#a1a1aa;
+        --line:#2a2a2e;--accent:#7c6ff7;--chip:#25223f;--ok:#4ade80;--bad:#f87171}}
+  *{box-sizing:border-box} html{-webkit-text-size-adjust:100%}
+  body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  .wrap{max-width:720px;margin:0 auto;padding:16px 16px calc(32px + env(safe-area-inset-bottom))}
+  header{display:flex;align-items:center;justify-content:space-between;margin:4px 0 14px}
+  header h1{font-size:22px;margin:0;letter-spacing:-.01em}
+  .tag{font-size:12px;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:3px 10px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px;margin:0 0 14px}
+  .card h2{font-size:16px;margin:0 0 12px;display:flex;gap:8px;align-items:center}
+  .n{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--accent);color:var(--accent-fg);font-size:12px}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:10px 0}
+  .btn{appearance:none;border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:12px;padding:11px 14px;
+       font:inherit;font-size:15px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;text-decoration:none;min-height:44px}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-fg);font-weight:600}
+  .btn.wide{width:100%;justify-content:center}
+  .btn:disabled{opacity:.45;cursor:default}
+  select,input.field{font:inherit;font-size:15px;color:var(--fg);background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;min-height:44px;flex:1;min-width:140px}
+  .tabs{display:flex;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:4px;margin:0 0 14px}
+  .tabs button{flex:1;border:0;background:transparent;color:var(--muted);font:inherit;font-weight:600;padding:10px;border-radius:10px;cursor:pointer}
+  .tabs button[aria-selected=true]{background:var(--accent);color:var(--accent-fg)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(76px,1fr));gap:8px;margin:12px 0 4px}
+  .grid button{border:2px solid transparent;border-radius:12px;padding:0;background:#fff;cursor:pointer;aspect-ratio:3/4;overflow:hidden}
+  .grid button[aria-pressed=true]{border-color:var(--accent)}
+  .grid img{width:100%;height:100%;object-fit:cover;display:block}
+  .preview{display:flex;gap:12px;align-items:flex-start;margin-top:10px}
+  .preview img{width:96px;height:128px;object-fit:cover;border-radius:12px;border:1px solid var(--line);background:#fff;flex:none}
+  .chip{display:inline-flex;gap:6px;align-items:center;background:var(--chip);border-radius:999px;padding:5px 11px;font-size:14px}
+  .muted{color:var(--muted);font-size:14px}
+  video,canvas,.result img{width:100%;border-radius:14px;background:#000;display:block}
+  .mirror{transform:scaleX(-1)}
+  .result{margin:12px 0 0}
+  .result figcaption{color:var(--muted);font-size:13px;margin-top:6px}
+  #photoStatus,#liveStatus{min-height:20px;font-size:14px;margin:8px 0 0}
+  [data-tone=ok]{color:var(--ok)} [data-tone=error]{color:var(--bad)}
+  .stats{font-variant-numeric:tabular-nums;color:var(--muted);font-size:13px}
+  label.consent{display:flex;gap:10px;align-items:flex-start;font-size:14px}
+  label.consent input{width:20px;height:20px;margin-top:1px;flex:none}
+  .spin{display:inline-block;width:14px;height:14px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:s .8s linear infinite;vertical-align:-2px;margin-right:6px}
+  @keyframes s{to{transform:rotate(360deg)}}
+  [hidden]{display:none!important}
 </style>
 </head>
 <body>
-  <div class="wrap">
-    <h1 id="brand">Try it on</h1>
-    <p class="hint">Stand so your upper body is visible, arms relaxed.</p>
-    <div class="stage">
-      <video id="cam" autoplay playsinline muted></video>
-      <video id="out" autoplay playsinline muted hidden></video>
-    </div>
+<div class="wrap">
+  <header><h1 id="brand">Try it on</h1><span class="tag" id="engineTag">test build</span></header>
+
+  <section class="card" aria-labelledby="g-h">
+    <h2 id="g-h"><span class="n">1</span> Garment</h2>
     <div class="row">
-      <input type="file" id="garment" accept="image/*"/>
-      <select id="category" aria-label="Garment type">
-        <option value="tops">Top</option>
-        <option value="bottoms">Bottom</option>
-        <option value="one-pieces">Dress / one-piece</option>
-      </select>
+      <label class="btn" for="garmentFile">⬆ Upload garment photo</label>
+      <input id="garmentFile" type="file" accept="image/*" hidden/>
     </div>
-    <div class="row">
-      <input type="text" id="desc" placeholder="Describe it (optional), e.g. navy linen shirt" maxlength="200"/>
+    <div class="muted">or pick a sample:</div>
+    <div class="grid" id="samples"></div>
+    <div class="preview" id="garmentPreviewBox" hidden>
+      <img id="garmentPreview" alt="Selected garment"/>
+      <div style="flex:1;min-width:0">
+        <div id="garmentName" style="font-weight:600"></div>
+        <div class="row">
+          <select id="category" aria-label="Garment type">
+            <option value="tops">Top / jacket</option>
+            <option value="bottoms">Bottom (trousers, skirt)</option>
+            <option value="one-pieces">Dress / one-piece</option>
+          </select>
+          <select id="gptype" aria-label="Garment photo kind">
+            <option value="flat-lay">Product photo</option>
+            <option value="model">Worn by a model</option>
+          </select>
+        </div>
+      </div>
     </div>
-    <div class="row" id="code-row" hidden>
-      <input type="password" id="code" placeholder="Access code" autocomplete="off"/>
-    </div>
-    <div class="row">
-      <button id="photoBtn">Photo try-on</button>
-      <button id="liveBtn">Live try-on</button>
-      <button id="stopBtn" class="ghost" disabled>Stop</button>
-      <span id="timer"></span>
-    </div>
-    <label class="consent" id="consent-row">
-      <input type="checkbox" id="consent"/>
-      <span>Optional: allow using my try-on video to improve the service. I am 18+.
-        Try-on works either way.</span>
-    </label>
-    <img id="result" alt="Try-on result" hidden/>
-    <p class="hint" id="status" role="status"></p>
+  </section>
+
+  <div class="tabs" role="tablist">
+    <button role="tab" id="tabPhoto" aria-selected="true">📷 Photo try-on</button>
+    <button role="tab" id="tabLive" aria-selected="false">🎥 Live try-on</button>
   </div>
-<script type="module" src="/app.js?v=5f3391840f62"></script>
+
+  <section id="panePhoto">
+    <div class="card">
+      <h2><span class="n">2</span> You</h2>
+      <div class="row">
+        <label class="btn" for="personCam">📸 Take photo</label>
+        <input id="personCam" type="file" accept="image/*" capture hidden/>
+        <label class="btn" for="personFile">🖼 Upload photo</label>
+        <input id="personFile" type="file" accept="image/*" hidden/>
+        <button class="btn" id="webcamBtn" type="button">💻 Use webcam</button>
+      </div>
+      <div id="webcamBox" hidden>
+        <video id="webcam" class="mirror" playsinline muted autoplay></video>
+        <div class="row">
+          <button class="btn primary" id="snapBtn" type="button">Capture</button>
+          <button class="btn" id="webcamFlip" type="button">↺ Switch camera</button>
+          <button class="btn" id="webcamClose" type="button">Close</button>
+        </div>
+      </div>
+      <div class="muted">Best: upper or full body, facing the camera, good light.</div>
+      <div class="preview" id="personPreviewBox" hidden>
+        <img id="personPreview" alt="Your photo"/>
+        <div style="flex:1;min-width:0">
+          <div id="genderBox" hidden>
+            <div class="chip">🤖 AI estimate: <b id="genderText">…</b></div>
+            <div class="row">
+              <select id="genderChoice" aria-label="Correct the estimate">
+                <option value="">Keep AI estimate</option>
+                <option value="female">Female</option>
+                <option value="male">Male</option>
+                <option value="unspecified">Prefer not to say</option>
+              </select>
+            </div>
+            <div class="muted">AI estimates can be wrong. Change it if needed.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <h2><span class="n">3</span> Try it on</h2>
+      <div class="row">
+        <select id="quality" aria-label="Quality">
+          <option value="fast">Fast</option>
+          <option value="balanced" selected>Balanced</option>
+          <option value="best">Best quality</option>
+        </select>
+      </div>
+      <button class="btn primary wide" id="tryBtn" type="button">Try it on</button>
+      <p id="photoStatus" role="status"></p>
+      <figure class="result" id="resultBox" hidden>
+        <img id="resultImg" alt="Try-on result"/>
+        <figcaption id="resultInfo"></figcaption>
+      </figure>
+      <div class="row" id="resultActions" hidden>
+        <a class="btn" id="saveImg" download="try-on.jpg">⬇ Save image</a>
+        <button class="btn" id="compareBtn" type="button">Before / after</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="paneLive" hidden>
+    <div class="card">
+      <h2><span class="n">2</span> Live try-on</h2>
+      <div class="muted">Uses the garment above. Step back so your upper body is in view.</div>
+      <div class="row" id="codeRow" hidden>
+        <input id="code" class="field" type="password" placeholder="Access code" autocomplete="off"/>
+      </div>
+      <div style="margin-top:12px">
+        <canvas id="liveOut" width="640" height="480"></canvas>
+        <video id="liveOutVideo" playsinline autoplay muted hidden></video>
+        <video id="liveSrc" playsinline muted autoplay hidden></video>
+      </div>
+      <div class="row">
+        <button class="btn primary" id="liveStart" type="button">Start live</button>
+        <button class="btn" id="liveStop" type="button" disabled>Stop</button>
+        <button class="btn" id="liveFlip" type="button">↺ Front/back</button>
+        <span id="timer" class="stats"></span>
+      </div>
+      <div class="stats" id="liveStats"></div>
+      <p id="liveStatus" role="status"></p>
+      <div class="row" id="videoActions" hidden>
+        <a class="btn" id="saveVideo" download="try-on-live.webm">⬇ Download video</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <label class="consent">
+      <input type="checkbox" id="consent"/>
+      <span>Save my photos and videos to help improve the try-on (I'm 18 or older). Try-on works either way.</span>
+    </label>
+  </section>
+</div>
+<script type="module" src="/app.js?v=ed496222e420"></script>
 </body>
 </html>
