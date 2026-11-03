@@ -1,130 +1,121 @@
-# Live Virtual Try-On
+<p align="center">
+  <img src="docs/assets/hero.png" alt="Live Virtual Try-On: see clothes on yourself before you buy, live on camera or from a single photo" width="100%">
+</p>
 
-See clothes on yourself with your webcam, in two modes:
+<p align="center">
+  <a href="https://live-virtual-try-on.brandzaha.com"><b>▶&nbsp; Try the live demo</b></a>
+  &nbsp;·&nbsp; <a href="#-how-it-works">How it works</a>
+  &nbsp;·&nbsp; <a href="#-features">Features</a>
+  &nbsp;·&nbsp; <a href="#-for-online-stores">For stores</a>
+  &nbsp;·&nbsp; <a href="#-privacy">Privacy</a>
+</p>
 
-- **Live video** (paid): streams your camera to Decart's realtime **Lucy VTON**
-  model and plays back video of you wearing the garment you pick.
-- **Photo (free)**: takes one photo of you and sends it, with the garment, to the
-  public [Leffa](https://github.com/franciszzj/Leffa) demo on Hugging Face (MIT
-  model). The result arrives in 20–40 seconds. Hugging Face's free GPU quota allows
-  about **one photo per day per internet connection** without a login. Leffa does
-  tops, bottoms and dresses (not hats).
+<p align="center">
+  <b>See it on you before you buy it.</b><br>
+  Shoppers pick a garment and instantly see themselves wearing it, live on their camera like a mirror,
+  or as a crisp photo. It runs in the browser on any phone or laptop, with nothing to install.
+</p>
 
-If live mode can't run (no key, out of credits, limits reached) the page offers
-photo mode instead, and starts in photo mode when the server has no Decart key.
+---
 
-Live at **https://live-virtual-try-on.brandzaha.com**
+## 🎬 See it in action
 
-## How live mode works
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/assets/tryon-flow.gif" alt="Animation: a shopper taps a hoodie, a striped tee and a dress, and sees each one on themselves live" width="300"><br>
+      <sub><b>Tap a garment → wear it, live</b><br>Switch outfits in a tap. The clothes follow as you move.</sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/assets/app-tour.gif" alt="Animation: the try-on app on a phone: pick a garment, add a photo, go live" width="300"><br>
+      <sub><b>The app on a phone</b><br>Pick a garment, add your photo, or go live.</sub>
+    </td>
+  </tr>
+</table>
 
-1. The browser asks this app's server for a session key (`POST /api/token`).
-   The server holds the real Decart API key and hands out a short-lived key that
-   only works for the try-on models, only from this website, and only for a capped
-   session length.
-2. The browser opens the camera and connects to `lucy-vton-latest` over WebRTC
-   using the official [`@decartai/sdk`](https://www.npmjs.com/package/@decartai/sdk).
-3. Picking a garment sends its photo plus a short description with `set()`.
-   The model dresses you in it in real time. Switching garments needs no reconnect.
+---
 
-Garments can come from the built-in samples, an uploaded photo, a pasted image,
-an image link, or an image dragged in from a shop in another tab. The
-"Describe it" field improves results for your own photos.
+## 🧭 How it works
 
-This is the same design as the Anywear Chrome extension, rebuilt from Decart's
-public SDK and docs.
+<p align="center"><img src="docs/assets/how-it-works.png" alt="How it works: 1 pick a garment, 2 add yourself, 3 see it on you" width="100%"></p>
 
-## How photo mode works
+1. **Pick a garment.** Choose one from the store, or upload any clothing photo: a product shot or someone wearing it.
+2. **Add yourself.** Turn on your camera for live try-on, or take or upload a photo.
+3. **See it on you.** Move around, compare before and after, and save the photo or record a video.
 
-`src/photo.js` calls the Leffa demo's `/leffa_predict_vt` endpoint straight from
-the visitor's browser with [`@gradio/client`](https://www.npmjs.com/package/@gradio/client),
-so each visitor uses their own free quota and this server does no extra work.
-Requests to `*.hf.space` are sent without cookies, because the demo's cross-site
-rules don't allow them. Tops use the VITON-HD model; bottoms and dresses use
-DressCode. The photo is a 3:4 portrait cropped from the camera, mirrored like the
-preview.
+---
 
-## Run locally
+## 🎥 Two ways to try
 
-Needs Node.js 20+.
+<p align="center"><img src="docs/assets/two-modes.png" alt="Live try-on versus photo try-on" width="100%"></p>
 
-```bash
-npm install
-cp .env.example .env      # then paste your key after DECART_API_KEY=
-npm start
-```
-
-Open http://localhost:3000. After changing anything in `src/`, run `npm run build`
-(`build.mjs` bundles `public/app.js` and stamps its fingerprint into `index.html`
-so browsers pick up the new version; the built file is committed so servers don't
-need a build step). Photo mode works without a Decart key.
-
-## Deploy (Ubuntu/Debian VPS)
-
-Point a DNS A record at the server, then on the server:
-
-```bash
-git clone https://github.com/meitswami/decart-clone.git /tmp/decart-clone
-sudo bash /tmp/decart-clone/deploy/setup.sh --email you@example.com
-sudo bash /opt/live-virtual-try-on/deploy/set-key.sh   # paste your Decart key (stays hidden)
-```
-
-`setup.sh` installs Node.js 22 (only if Node is missing), nginx and certbot if needed. It never upgrades packages already on the server, puts the app in
-`/opt/live-virtual-try-on`, runs it as a locked-down `systemd` service on
-127.0.0.1:3070 (`--port` to change), adds an nginx site, and gets a free HTTPS certificate (browsers
-only allow camera access over HTTPS). It refuses to touch ports 80/443 if
-something other than nginx owns them. Run it again to update to the latest code.
-
-Useful commands:
-
-```bash
-sudo systemctl status live-virtual-try-on
-sudo journalctl -u live-virtual-try-on -f
-```
-
-## Settings
-
-Set in `/etc/live-virtual-try-on.env` on the server (or `.env` locally).
-
-| Setting | Default | What it does |
+| | 🎥 **Live try-on** | 📷 **Photo try-on** |
 |---|---|---|
-| `DECART_API_KEY` | (required) | Your key from https://platform.decart.ai |
-| `PUBLIC_ORIGIN` | (none) | Site address; session keys only work from it. Set it in production. |
-| `ACCESS_CODE` | (none) | If set, visitors must enter this code to start. |
-| `MAX_SESSION_SECONDS` | 120 | Longest a single session can run (enforced by Decart too). |
-| `TOKENS_PER_IP_PER_HOUR` | 10 | Sessions one visitor can start per hour. |
-| `DAILY_TOKEN_LIMIT` | 300 | Sessions the whole site can start per day. |
-| `TRUST_PROXY` | off | Set to `1` behind nginx so limits use the visitor's real IP. |
-| `HOST` / `PORT` | 127.0.0.1 / 3000 | Where the app listens. |
+| **Best for** | Seeing how it looks as you move and turn | A sharp picture to keep or share |
+| **You need** | Your phone or laptop camera | One photo, from the camera or your gallery |
+| **You get** | Real-time video, which you can record and download | A high-resolution image, up to 4K |
+| **Switching garments** | Instant, no restart | Pick another and try again |
 
-## Cost
+---
 
-Decart charges about **$0.02 per second** of live try-on ($1.20 per minute).
-With the defaults, the worst case is 300 sessions × 2 minutes per day, so lower
-`DAILY_TOKEN_LIMIT` or set an `ACCESS_CODE` if that is more than you want to
-risk. Sessions also stop when the visitor presses Stop or leaves the tab.
+## ✨ Features
 
-## Security notes
+| Feature | What you get |
+|---|---|
+| 🎥 **Live camera try-on** | Like a mirror that changes your clothes. Front or back camera, with live preview. |
+| 📷 **Photo try-on up to 4K** | Your face, hair and background stay exactly as they are; only the garment changes. |
+| 👕 **Any garment** | Tops, jackets, bottoms and dresses. Pick from the catalog or upload a product photo. |
+| 🤖 **Smart fit assistant** | AI checks that your photo shows a person and estimates men's or women's fit. You can change it in one tap. |
+| 💾 **Save and share** | Download the try-on photo, compare before and after, or download the recorded live video. |
+| 📱 **Works everywhere** | Runs in the browser on Android, iPhone and desktop, on Wi-Fi or mobile data. No app needed. |
+| 🏷️ **Your brand** | White-label: your name, colours and domain. Shoppers only ever see your store. |
+| 🔒 **Privacy first** | The camera runs only while you use it. Nothing is kept unless the shopper opts in. |
 
-- The real API key never reaches the browser.
-- Session keys are locked to the try-on models, to `PUBLIC_ORIGIN`, and to
-  `MAX_SESSION_SECONDS`, and expire 2 minutes after minting.
-- `/api/image` only fetches public-internet images on standard ports, re-checks
-  the address at connect time, follows at most 3 redirects, and caps size at 12 MB.
+---
 
-## Files
+## 🛍️ For online stores
 
-- `server.mjs`: the server (page, session keys, image fetch, limits)
-- `src/app.js`: page logic for both modes; `src/photo.js`: the free Leffa photo call
-- `build.mjs`: bundles `src/` into `public/app.js` and fingerprints it in `index.html`
-- `public/index.html`: the page
-- `public/garments/`: sample garments and their prompts (`catalog.json`)
-- `deploy/`: setup script, systemd service, nginx site, settings template
+<p align="center"><img src="docs/assets/store-journey.png" alt="Shopper journey: product page, tap Try it on, see it on themselves, add to cart" width="100%"></p>
 
-## Credits
+- **A "Try it on" button on every product page.** Shoppers see the fit and colour on themselves before they buy.
+- **More confident buyers.** Seeing the garment on your own body answers "will this suit me?" on the spot.
+- **Predictable costs.** Built-in daily limits per store and per visitor keep usage under control.
+- **Fits your look.** Your logo, colours and domain. No third-party branding in front of your customers.
 
-Sample garment photos and prompts are from
-[DecartAI/tryon-examples](https://github.com/DecartAI/tryon-examples), MIT
-License (see `public/garments/LICENSE-tryon-examples.txt`). Try-on video is
-generated by Decart's Lucy VTON model. Free photo try-on uses
-[Leffa](https://github.com/franciszzj/Leffa) (MIT) through its public Hugging Face
-demo, [franciszzj/Leffa](https://huggingface.co/spaces/franciszzj/Leffa).
+---
+
+## 💡 Tips for the best result
+
+| Tip | How |
+|---|---|
+| 🧍 **Framing** | Stand 1–2 m back with your upper body (or full body) in view, arms relaxed. |
+| 💡 **Light** | Even, front-facing light. Avoid a bright window behind you. |
+| 👕 **Garment photo** | Front-facing, with the whole garment visible. Product photos work best. |
+| 📶 **Live on mobile** | A steady 4G or 5G connection gives the smoothest live view. |
+
+---
+
+## 🔒 Privacy
+
+- Your camera and photos are used **only to create your try-on**.
+- **Nothing is saved** unless you switch on *"Save my photos and videos to help improve the try-on"*. That's only for people aged 18 or older, and try-on works the same either way.
+- If you did opt in, you can ask us to delete your photos and videos at any time.
+
+---
+
+## 🗺️ Status
+
+| Part | Status |
+|---|---|
+| 🎥 Live try-on | ✅ Live |
+| 📷 Photo try-on | ✅ Live |
+| 🖼️ 4K photo results | 🧪 In testing |
+| 🤖 Smart fit assistant | 🧪 In testing |
+| 💾 Save photos and videos (with consent) | 🧪 In testing |
+
+---
+
+<p align="center">
+  <a href="https://live-virtual-try-on.brandzaha.com"><b>▶&nbsp; Try it now</b></a><br><br>
+  <sub>Made by <b>Brandzaha</b> &nbsp;·&nbsp; Team docs: <a href="docs/TECHNICAL.md">docs/TECHNICAL.md</a></sub>
+</p>
