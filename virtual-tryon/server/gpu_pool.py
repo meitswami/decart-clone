@@ -85,7 +85,26 @@ class GpuPool:
             return None
         return d.get("pod")
 
-    async def _create(self, c: httpx.AsyncClient) -> str:
+    async def _create_any(self, c: httpx.AsyncClient) -> str:
+        """Try every volume (data centre) in order, retrying until a GPU frees up."""
+        volumes = [v.strip() for v in settings.gpu_network_volume.split(",") if v.strip()]
+        deadline = time.time() + settings.gpu_find_timeout
+        attempt = 0
+        while True:
+            for vol in volumes:
+                try:
+                    return await self._create(c, vol)
+                except RuntimeError as e:
+                    if "no_gpu" not in str(e):
+                        raise
+            attempt += 1
+            if time.time() > deadline:
+                raise RuntimeError("no_gpu")
+            self._live["stage"] = STAGES["request"]
+            self._live["note"] = "GPUs are in high demand; still looking…"
+            await asyncio.sleep(min(15, 5 + 3 * attempt))
+
+    async def _create(self, c: httpx.AsyncClient, volume: str) -> str:
         origin = settings.origin
         env = {"WORKER_TOKEN": settings.worker_token, "ENGINE_SECRET": settings.engine_secret,
                "IDLE_MIN": str(settings.gpu_idle_minutes), "GIT_BRANCH": settings.gpu_git_branch,
@@ -95,7 +114,7 @@ class GpuPool:
         body = {
             "name": "vto-gpu", "imageName": settings.gpu_image, "cloudType": "SECURE", "gpuCount": 1,
             "gpuTypeIds": [g.strip() for g in settings.gpu_types.split(",") if g.strip()],
-            "gpuTypePriority": "custom", "networkVolumeId": settings.gpu_network_volume,
+            "gpuTypePriority": "custom", "networkVolumeId": volume,
             "volumeMountPath": "/workspace", "containerDiskInGb": 30, "ports": ["8000/http"], "env": env,
             "dockerStartCmd": ["bash", "-c",
                                "bash /workspace/app/virtual-tryon/scripts/pod_boot.sh & exec /start.sh"],
@@ -183,7 +202,7 @@ class GpuPool:
                 if kind == "create":
                     self._live.update(kind="create", eta_s=self.eta("create"))
                     old = self.pod_id
-                    self._state["pod_id"] = await self._create(c)
+                    self._state["pod_id"] = await self._create_any(c)
                     self._save()
                     log.info("created pod %s (replacing %s)", self.pod_id, old)
                     if old and settings.gpu_cleanup_superseded:
@@ -193,6 +212,7 @@ class GpuPool:
                             pass
                 else:
                     self._live.update(kind=kind, eta_s=self.eta(kind))
+                self._live.pop("note", None)
                 self._live["stage"] = STAGES["boot"]
                 deadline = t0 + settings.gpu_wake_timeout
                 while time.time() < deadline:

@@ -45,9 +45,13 @@ class Settings(BaseSettings):
     # On-demand GPU (RunPod): the site wakes a GPU only when a try-on starts.
     gpu_mode: str = "off"                 # "off" | "runpod"
     runpod_api_key: str = ""
-    gpu_network_volume: str = ""          # network volume with models (same DC as the GPUs)
+    # Network volume(s) with the models, comma-separated, tried in order. Each one
+    # lives in one data centre; a second volume in another DC improves availability.
+    gpu_network_volume: str = ""
     gpu_types: str = ("NVIDIA GeForce RTX 4090,NVIDIA GeForce RTX 5090,NVIDIA L40S,"
-                      "NVIDIA RTX 6000 Ada Generation,NVIDIA RTX A6000,NVIDIA A40,NVIDIA L4")
+                      "NVIDIA RTX 6000 Ada Generation,NVIDIA RTX A6000,NVIDIA A40,NVIDIA L4,"
+                      "NVIDIA RTX PRO 6000 Blackwell Server Edition")
+    gpu_find_timeout: int = 180           # keep looking for a free GPU this long
     gpu_image: str = "runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404"
     gpu_idle_minutes: int = 15
     gpu_git_branch: str = "main"

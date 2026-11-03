@@ -187,7 +187,7 @@ async function ensureGpu() {
       const el = Math.max(st.elapsed_s || 0, (performance.now() - t0) / 1000);
       $("#wakeBar").style.width = `${Math.min(95, (el / eta) * 100).toFixed(0)}%`;
       const left = eta - el;
-      $("#wakeEta").textContent = left > 3 ? `${fmtSecs(left)} left` : "Almost there…";
+      $("#wakeEta").textContent = st.note ? st.note : left > 3 ? `${fmtSecs(left)} left` : "Almost there…";
       let passed = true;
       for (const li of document.querySelectorAll("#wakeSteps li")) {
         const on = li.dataset.s === st.stage;
