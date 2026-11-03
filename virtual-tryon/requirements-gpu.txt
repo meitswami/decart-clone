@@ -1,0 +1,21 @@
+# Installed ONLY on the GPU box (RunPod), on top of requirements.txt.
+# These need CUDA. Pin torch to the CUDA build matching the box's driver.
+#
+# Install order (see scripts/download_models.sh):
+#   pip install -r requirements.txt
+#   pip install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cu124
+#   pip install -r requirements-gpu.txt
+
+diffusers==0.31.0
+transformers==4.46.3
+accelerate==1.1.1
+safetensors==0.4.5
+xformers==0.0.28.post3
+opencv-python-headless==4.10.0.84
+onnxruntime-gpu==1.20.1
+
+# StreamDiffusionV2 and FlashVSR are installed from source (git), not PyPI.
+# Pinned commits live in scripts/download_models.sh so builds are reproducible.
+#
+# FASHN VTON v1.5 is also cloned from source; its weights (~2GB) download
+# from Hugging Face in scripts/download_models.sh.
