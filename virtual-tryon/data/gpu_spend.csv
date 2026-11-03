@@ -5,3 +5,6 @@ time_ist,event,pod_id,name,gpu,cost_per_hr_usd
 2026-11-03 13:07,stop,e6jqwiwx664y7x,vto-dev,RTX 5090,1.19
 2026-11-03 13:44,create,hxiakjhz6w9hvm,vto-dev,,1.19
 2026-11-03 13:44,create,hxiakjhz6w9hvm,vto-dev,RTX 5090,1.19
+2026-11-03 14:55,stop,hxiakjhz6w9hvm,vto-dev,RTX 5090,1.19
+2026-11-03 14:57,create,chv2rb0p2b4vv4,vto-setup,,0.59
+2026-11-03 15:18,stop,chv2rb0p2b4vv4,vto-setup,L4,0.59

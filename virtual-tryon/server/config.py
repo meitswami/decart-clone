@@ -42,6 +42,36 @@ class Settings(BaseSettings):
     live_key_interval: float = 1.0
     keepalive_file: str = "/workspace/.keepalive"
 
+    # On-demand GPU (RunPod): the site wakes a GPU only when a try-on starts.
+    gpu_mode: str = "off"                 # "off" | "runpod"
+    runpod_api_key: str = ""
+    # Network volume(s) with the models, comma-separated, tried in order. Each one
+    # lives in one data centre; a second volume in another DC improves availability.
+    gpu_network_volume: str = ""
+    gpu_types: str = ("NVIDIA GeForce RTX 4090,NVIDIA GeForce RTX 5090,NVIDIA L40S,"
+                      "NVIDIA RTX 6000 Ada Generation,NVIDIA RTX A6000,NVIDIA A40,NVIDIA L4,"
+                      "NVIDIA RTX PRO 6000 Blackwell Server Edition")
+    gpu_find_timeout: int = 180           # keep looking for a free GPU this long
+    # Tiny base image (~45 MB): Python, PyTorch, libraries and models all live on
+    # the network volume (scripts/build_env.sh), so any GPU machine starts fast.
+    gpu_image: str = "python:3.12-slim-bookworm"
+    gpu_git_repo: str = "meitswami/decart-clone"
+    gpu_github_token: str = ""            # only needed if the repo is private
+    gpu_idle_minutes: int = 15
+    gpu_git_branch: str = "main"
+    gpu_wake_timeout: int = 600
+    gpu_wakes_per_ip_per_hour: int = 6
+    gpu_daily_wake_limit: int = 200
+    gpu_cleanup_superseded: bool = True
+    gpu_state_file: str = "./data/gpu_state.json"
+    worker_token: str = ""                # shared with the GPU worker
+    # Overridable for tests; defaults are RunPod's real endpoints.
+    runpod_graphql_url: str = "https://api.runpod.io/graphql"
+    runpod_rest_url: str = "https://rest.runpod.io/v1"
+    gpu_worker_url_template: str = "https://{pod}-8000.proxy.runpod.net"
+    # On the GPU box only: send captures to the site instead of keeping them here.
+    capture_upload_url: str = ""
+
     # Consented training captures (photos, live frames, videos) + admin gallery.
     captures_dir: str = "./data/captures"
     admin_token: str = ""

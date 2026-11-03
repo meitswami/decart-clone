@@ -15,6 +15,7 @@ from starlette.concurrency import run_in_threadpool
 
 from .config import settings
 from . import captures, consent, limits, live_ws, sessions
+from .gpu_pool import pool as gpu
 from .decart_tokens import DecartTokenError, mint_client_token
 from .engine_ticket import TicketError, mint_ticket
 from pipeline import garment as garment_mod
@@ -48,15 +49,22 @@ def _warm() -> None:
 
     def go():
         try:
-            if photo_tryon._available():
+            if photo_tryon._available() and not _pool():
                 photo_tryon.load()
                 photo_tryon.load_upscaler()
                 photo_tryon.load_parser()
-            if person_analysis.available():
+            if person_analysis.available() and not _pool():
                 person_analysis._load()
         except Exception:
             log.exception("model warm-up failed")
     threading.Thread(target=go, daemon=True).start()
+
+
+@app.on_event("startup")
+async def _gpu_guard() -> None:
+    if settings.gpu_mode == "runpod":
+        import asyncio
+        asyncio.create_task(gpu.guard())
 
 
 def _touch() -> None:
@@ -90,8 +98,17 @@ def _err(status: int, code: str, message: str) -> JSONResponse:
                         status_code=status, headers={"Cache-Control": "no-store"})
 
 
+def _pool() -> bool:
+    return settings.gpu_mode == "runpod"
+
+
 def _photo_ready() -> bool:
-    return bool(photo_tryon.GPU_WORKER_URL) or photo_tryon._available()
+    return _pool() or bool(photo_tryon.GPU_WORKER_URL) or photo_tryon._available()
+
+
+def _asleep() -> JSONResponse:
+    return JSONResponse({"error": "gpu_asleep", "message": "Waking up the try-on servers."},
+                        status_code=503, headers={"Cache-Control": "no-store"})
 
 
 @app.get("/health")
@@ -112,7 +129,8 @@ def public_config():
             "access_code_required": bool(settings.access_code),
             "recording_enabled": settings.recording_enabled,
             "photo_model_ready": _photo_ready(),
-            "analysis_ready": person_analysis.available(),
+            "analysis_ready": _pool() or person_analysis.available(),
+            "gpu_mode": settings.gpu_mode,
             "samples": _SAMPLES_DIR.exists()}
 
 
@@ -134,11 +152,25 @@ async def garment_prepare(file: UploadFile = File(...),
 
 @app.post("/analyze/person")
 async def analyze_person(image: UploadFile = File(...)):
-    if not person_analysis.available():
-        return {"available": False}
     data = await image.read()
     if len(data) > 25_000_000:
         return _err(413, "too_large", "Photos must be under 25 MB.")
+    if _pool():  # only when the GPU is already awake; never wakes it by itself
+        gpu.touch()
+        if not await gpu.is_ready():
+            return {"available": True, "asleep": True}
+        import httpx
+        try:
+            async with httpx.AsyncClient(timeout=60) as c:
+                r = await c.post(f"{gpu.worker_url()}/analyze", files={"image": ("p.jpg", data)},
+                                 headers={"Authorization": f"Bearer {settings.worker_token}",
+                                          "User-Agent": "vto-server/1.0"})
+            return r.json() if r.status_code == 200 else {"available": False}
+        except Exception:
+            log.exception("remote analysis failed")
+            return {"available": False}
+    if not person_analysis.available():
+        return {"available": False}
     try:
         res = await run_in_threadpool(person_analysis.analyze, data)
         parser = photo_tryon.load_parser() if photo_tryon._available() else None
@@ -184,9 +216,18 @@ async def photo_tryon_ep(person: UploadFile = File(...),
     if len(p) > 25_000_000 or len(g) > 25_000_000:
         return _err(413, "too_large", "Photos must be under 25 MB.")
     t = time.time()
+    if _pool():
+        gpu.touch()
+        if not await gpu.is_ready():
+            return _asleep()
     try:
-        out = await run_in_threadpool(photo_tryon.run, p, g, category,
-                                      garment_photo_type=garment_photo_type, quality=quality)
+        if _pool():
+            out, _info = await run_in_threadpool(
+                lambda: photo_tryon.run_remote(p, g, category, url=gpu.worker_url(), token=settings.worker_token,
+                                               garment_photo_type=garment_photo_type, quality=quality))
+        else:
+            out = await run_in_threadpool(photo_tryon.run, p, g, category,
+                                          garment_photo_type=garment_photo_type, quality=quality)
     except Exception:
         log.exception("photo try-on failed")
         return _err(502, "photo_failed", "Couldn't create the try-on photo. Please try again.")
@@ -209,10 +250,12 @@ async def photo_tryon_ep(person: UploadFile = File(...),
 async def live_token(request: Request,
                      store_id: str = Form(...),
                      consented: bool = Form(False),
-                     is_adult: bool = Form(False)):
+                     is_adult: bool = Form(False),
+                     engine: str = Form("")):
     """Start a live session: checks origin, access code, per-visitor and
     per-store limits, then hands out a short-lived key (hosted backend) or a
     signed ticket (our GPU engine). The real keys stay here.
+    engine="gpu" asks for our own GPU engine even when the hosted one is set up.
     """
     origin = settings.origin
     if origin and (request.headers.get("origin") or "").lower() != origin:
@@ -222,6 +265,11 @@ async def live_token(request: Request,
         return _err(401, "access_code", "That access code isn't right.")
 
     store_id = store_id.strip()[:64] or "demo"
+    use_hosted = settings.live_backend == "decart" and bool(settings.decart_api_key) and engine != "gpu"
+    if not use_hosted and _pool():
+        gpu.touch()
+        if not await gpu.is_ready():
+            return _asleep()  # page wakes the GPU (with a loader) and asks again
     wait = sessions.rate_limit_wait_minutes(_client_ip(request))
     if wait:
         return _err(429, "rate_limited",
@@ -234,7 +282,7 @@ async def live_token(request: Request,
     record = consent.should_record(consented, is_adult)
     base = {"max_seconds": settings.max_session_seconds, "record": record}
 
-    if settings.live_backend == "decart":
+    if use_hosted:
         try:
             token = await mint_client_token(
                 model=settings.decart_model, origin=origin,
@@ -244,8 +292,11 @@ async def live_token(request: Request,
             limits.release_session(store_id)
             return _err(e.status, "live_unavailable", e.message)
         sid = sessions.start(store_id, record)
+        trial = captures.new_trial() if record else None
+        if trial:  # hosted engine: we may keep the shopper's own camera input only
+            captures.update_meta(trial, kind="live", engine="hosted", consent=True, store_id=store_id)
         log.info("live session %s started for store %s", sid[:8], store_id)
-        return JSONResponse({**base, "backend": "decart", "session_id": sid,
+        return JSONResponse({**base, "backend": "decart", "session_id": sid, "trial_id": trial,
                              "model": settings.decart_model,
                              "client_token": token["apiKey"],
                              "expires_at": token["expiresAt"]},
@@ -261,11 +312,29 @@ async def live_token(request: Request,
         sessions.end(sid)
         limits.release_session(store_id)
         return _err(503, "live_unavailable", "Live try-on isn't available right now.")
+    if trial:
+        captures.update_meta(trial, kind="live", engine="gpu", consent=True, store_id=store_id)
+    engine_url = gpu.worker_url() if _pool() else settings.gpu_engine_url.rstrip("/")
     return JSONResponse({**base, "backend": "local", "transport": settings.live_transport,
                          "session_id": sid, "trial_id": trial,
-                         "engine_url": settings.gpu_engine_url.rstrip("/"), "ticket": ticket,
+                         "engine_url": engine_url, "ticket": ticket,
                          "ice_servers": json.loads(settings.ice_servers)},
                         headers={"Cache-Control": "no-store"})
+
+
+@app.get("/gpu/status")
+async def gpu_status():
+    if not _pool():
+        return {"state": "ready" if _photo_ready() else "off"}
+    return JSONResponse(await gpu.status(), headers={"Cache-Control": "no-store"})
+
+
+@app.post("/gpu/wake")
+async def gpu_wake(request: Request):
+    """Called by the page when a shopper presses Try it on / Start live."""
+    if not _pool():
+        return {"state": "ready" if _photo_ready() else "off"}
+    return JSONResponse(await gpu.wake(_client_ip(request)), headers={"Cache-Control": "no-store"})
 
 
 @app.websocket("/live/ws")
@@ -285,7 +354,8 @@ async def live_end(session_id: str = Form(""), store_id: str = Form(""),
 # ---------- captures (consented training data) ----------
 
 @app.post("/captures/video")
-async def capture_video(trial_id: str = Form(...), video: UploadFile = File(...)):
+async def capture_video(trial_id: str = Form(...), video: UploadFile = File(...),
+                        kind: str = Form("output")):
     """Browser-recorded try-on video for a trial the shopper already consented to."""
     try:
         meta = captures._dir(trial_id, create=False) / "meta.json"
@@ -297,8 +367,35 @@ async def capture_video(trial_id: str = Form(...), video: UploadFile = File(...)
     if len(data) > 200_000_000:
         return _err(413, "too_large", "Video must be under 200 MB.")
     ext = "mp4" if (video.content_type or "").endswith("mp4") else "webm"
-    captures.save_file(trial_id, f"video.{ext}", data)
+    # "camera" = the shopper's own camera input (all we keep from the hosted engine)
+    captures.save_file(trial_id, f"{'camera' if kind == 'camera' else 'video'}.{ext}", data)
     captures.update_meta(trial_id, video_bytes=len(data))
+    return {"ok": True}
+
+
+@app.post("/captures/upload")
+async def capture_upload(request: Request, trial_id: str = Form(...), name: str = Form(""),
+                         meta: str = Form(""), file: UploadFile | None = File(None)):
+    """The GPU box sends live captures here (Bearer WORKER_TOKEN), so the
+    gallery has everything in one place. Only for consented trials."""
+    if not settings.worker_token or not _same_secret(
+            request.headers.get("authorization", "").removeprefix("Bearer ").strip(), settings.worker_token):
+        return _err(401, "auth", "Not authorised.")
+    try:
+        meta_file = captures._dir(trial_id, create=False) / "meta.json"
+    except ValueError:
+        return _err(422, "bad_trial", "Unknown session.")
+    if not meta_file.exists() or not json.loads(meta_file.read_text()).get("consent"):
+        return _err(403, "no_consent", "This session isn't being saved.")
+    if meta:
+        fields = json.loads(meta)
+        fields.pop("consent", None)
+        captures.update_meta(trial_id, **fields)
+    if file is not None and name:
+        data = await file.read()
+        if len(data) > 20_000_000:
+            return _err(413, "too_large", "Too large.")
+        captures.save_file(trial_id, name, data)
     return {"ok": True}
 
 

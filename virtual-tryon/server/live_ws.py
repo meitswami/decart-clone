@@ -23,10 +23,7 @@ import logging
 import time
 from pathlib import Path
 
-import cv2
-import numpy as np
 from fastapi import WebSocket, WebSocketDisconnect
-from PIL import Image
 from starlette.concurrency import run_in_threadpool
 
 from . import captures
@@ -38,7 +35,10 @@ _active = 0
 SAVE_EVERY_S = 0.5
 
 
-def _dress_fn(garment: Image.Image, category: str):
+def _dress_fn(garment, category: str):
+    import numpy as np
+    from PIL import Image
+
     from pipeline import photo_tryon
     if photo_tryon._available():
         gpt = photo_tryon.detect_garment_photo_type(garment)
@@ -61,6 +61,10 @@ def _dress_fn(garment: Image.Image, category: str):
 
 async def handle(ws: WebSocket) -> None:
     global _active
+    import cv2
+    import numpy as np
+    from PIL import Image
+
     from pipeline.live_keyframe import LiveDresser
 
     await ws.accept()
