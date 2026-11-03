@@ -24,6 +24,9 @@ pip install -q --upgrade pip
 [ -d "$W/fashn-vton-1.5" ] || git clone -q https://github.com/fashn-AI/fashn-vton-1.5.git "$W/fashn-vton-1.5"
 git -C "$W/fashn-vton-1.5" checkout -q "$FASHN_COMMIT"
 pip install -q -e "$W/fashn-vton-1.5"
+# FASHN pulls the newest onnxruntime-gpu, which targets CUDA 13; the image's torch
+# is CUDA 12.8, so pin the last CUDA-12 build (pose model then runs on the GPU).
+pip install -q "onnxruntime-gpu==1.22.0"
 [ -f "$W/models/fashn-vton-1.5/weights/model.safetensors" ] || \
   python "$W/fashn-vton-1.5/scripts/download_weights.py" --weights-dir "$W/models/fashn-vton-1.5/weights"
 

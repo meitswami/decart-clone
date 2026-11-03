@@ -51,6 +51,7 @@ def _warm() -> None:
             if photo_tryon._available():
                 photo_tryon.load()
                 photo_tryon.load_upscaler()
+                photo_tryon.load_parser()
             if person_analysis.available():
                 person_analysis._load()
         except Exception:
@@ -140,10 +141,25 @@ async def analyze_person(image: UploadFile = File(...)):
         return _err(413, "too_large", "Photos must be under 25 MB.")
     try:
         res = await run_in_threadpool(person_analysis.analyze, data)
+        parser = photo_tryon.load_parser() if photo_tryon._available() else None
+        if parser is not None:
+            res["person_found"] = await run_in_threadpool(_person_visible, parser, data)
+        if not res["person_found"]:
+            res.update(gender="unsure", confidence=0.0)
     except Exception:
         log.exception("analysis failed")
         return {"available": False}
     return {"available": True, **res}
+
+
+def _person_visible(parser, data: bytes) -> bool:
+    import io as _io
+
+    import numpy as np
+    from PIL import Image, ImageOps
+    img = ImageOps.exif_transpose(Image.open(_io.BytesIO(data))).convert("RGB")
+    lab = parser.predict(img)
+    return bool(np.isin(lab, [1, 2, 12, 13, 16]).mean() > 0.02)  # face, hair, arms, hands, torso
 
 
 # ---------- photo try-on ----------
@@ -152,7 +168,7 @@ async def analyze_person(image: UploadFile = File(...)):
 async def photo_tryon_ep(person: UploadFile = File(...),
                          garment: UploadFile = File(...),
                          category: str = Form("tops"),
-                         garment_photo_type: str = Form("flat-lay"),
+                         garment_photo_type: str = Form("auto"),
                          quality: str = Form("balanced"),
                          consented: bool = Form(False),
                          is_adult: bool = Form(False),
@@ -161,8 +177,8 @@ async def photo_tryon_ep(person: UploadFile = File(...),
                          source: str = Form("")):
     if category not in ("tops", "bottoms", "one-pieces"):
         return _err(422, "bad_category", "Garment type must be top, bottom or one-piece.")
-    if garment_photo_type not in ("flat-lay", "model"):
-        garment_photo_type = "flat-lay"
+    if garment_photo_type not in ("flat-lay", "model", "auto"):
+        garment_photo_type = "auto"
     p = await person.read()
     g = await garment.read()
     if len(p) > 25_000_000 or len(g) > 25_000_000:

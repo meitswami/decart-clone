@@ -97,6 +97,52 @@ def load_upscaler():
     return _UPSCALER or None
 
 
+_PARSER = None
+_PARSER_LOCK = threading.Lock()
+
+
+def load_parser():
+    """fashn-human-parser (installed with FASHN). None if unavailable."""
+    global _PARSER
+    with _PARSER_LOCK:
+        if _PARSER is None:
+            try:
+                from fashn_human_parser import FashnHumanParser
+                _PARSER = FashnHumanParser()
+                log.info("human parser loaded")
+            except Exception as e:
+                log.warning("human parser unavailable (%s); using difference masks", e)
+                _PARSER = False
+    return _PARSER or None
+
+
+def detect_garment_photo_type(garment) -> str:
+    """'model' if a person is visible in the garment photo (face/arms/hands/legs),
+    else 'flat-lay'. Picking the wrong one makes the model blend the wearer's
+    skin into the garment (seen on the first real run)."""
+    parser = load_parser()
+    if parser is None:
+        return "flat-lay"
+    import numpy as np
+    lab = parser.predict(garment)
+    person_px = np.isin(lab, [1, 12, 13, 14]).mean()  # face, arms, hands, legs
+    return "model" if person_px > 0.01 else "flat-lay"
+
+
+def garment_mask_fn(category: str):
+    """Returns mask_fn(before_rgb, after_rgb) for hires/live, or None."""
+    parser = load_parser()
+    if parser is None:
+        return None
+    from .hires import semantic_mask
+    lock = threading.Lock()
+
+    def parse(img):
+        with lock:
+            return parser.predict(img)
+    return lambda before, after: semantic_mask(before, after, category, parse)
+
+
 def _call_model(person: Image.Image, garment: Image.Image, category: str,
                 garment_photo_type: str, quality: str, seed: int) -> Image.Image:
     pipe = load()
@@ -111,7 +157,7 @@ def _call_model(person: Image.Image, garment: Image.Image, category: str,
 
 
 def run_local(person_bytes: bytes, garment_bytes: bytes, category: str = "tops", *,
-              garment_photo_type: str = "flat-lay", quality: str = "balanced",
+              garment_photo_type: str = "auto", quality: str = "balanced",
               target_long_side: int | None = 3840, seed: int = 42) -> tuple[bytes, dict]:
     from .hires import compose_hires
     # Phone photos carry their rotation in EXIF; apply it or people come out sideways.
@@ -120,6 +166,10 @@ def run_local(person_bytes: bytes, garment_bytes: bytes, category: str = "tops",
     t = time.time()
     timing = {}
 
+    if garment_photo_type not in ("model", "flat-lay"):
+        garment_photo_type = detect_garment_photo_type(garment)
+    timing["garment_photo_type"] = garment_photo_type
+
     def model(p_low: Image.Image) -> Image.Image:
         t0 = time.time()
         out = _call_model(p_low, garment, category, garment_photo_type, quality, seed)
@@ -127,7 +177,8 @@ def run_local(person_bytes: bytes, garment_bytes: bytes, category: str = "tops",
         return out
 
     final, info = compose_hires(person, model, model_size=MODEL_SIZE,
-                                upscaler=load_upscaler(), target_long_side=target_long_side)
+                                upscaler=load_upscaler(), target_long_side=target_long_side,
+                                mask_fn=garment_mask_fn(category))
     info.update(timing, total_s=round(time.time() - t, 2), quality=quality)
     buf = io.BytesIO()
     final.save(buf, "JPEG", quality=95, subsampling=0)  # 4K PNGs are 20+ MB

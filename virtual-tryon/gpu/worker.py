@@ -72,7 +72,7 @@ def _photo_sync(p: bytes, g: bytes, category: str, gpt: str, quality: str, tls: 
 
 @app.post("/photo")
 async def photo(person: UploadFile = File(...), garment: UploadFile = File(...),
-                category: str = Form("tops"), garment_photo_type: str = Form("flat-lay"),
+                category: str = Form("tops"), garment_photo_type: str = Form("auto"),
                 quality: str = Form("balanced"), target_long_side: int = Form(3840),
                 authorization: str | None = Header(None)):
     _auth(authorization)

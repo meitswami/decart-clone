@@ -9,6 +9,7 @@ Times are IST (UTC+05:30). No secrets are ever written here.
 |---|---|---|---|---|---|---|---|
 | 12:41 | 12:43 | k5qhy8mcfist46 | RTX 6000 Ada 48 GB (secure, US-WA-1) | 0.99 | ~3 | ~0.05 | boot, watchdog, self-stop test |
 | 13:06 | 13:07 | e6jqwiwx664y7x | RTX 5090 32 GB (secure, EU-RO-1) | 1.19 | ~2 | ~0.04 | boot, watchdog; install blocked again → stopped |
+| 13:44 | (running for owner testing; watchdog stops it after 30 min idle) | hxiakjhz6w9hvm | RTX 5090 32 GB (secure, EU-RO-1) | 1.19 | | | install, deploy, real tests, test link |
 
 Stopped pods still bill a little for their disk: this pod's 80 GB volume is
 about $0.022/hr (~$0.53/day) while stopped; two stopped pods ≈ $1/day. Machine-readable log of every
@@ -160,3 +161,32 @@ Rules we follow:
 - Tested in headless Chrome emulating an Android phone: samples, photo with
   save-for-training, live 33–42 fps locally with stats, cap, video download +
   upload, admin gallery (4 sessions, video playback), unauthorised admin → 401.
+
+### 13:44 — Owner explicitly approved installing FASHN VTON v1.5, Real-ESRGAN, CLIP and their packages
+- Previous pod's GPU taken again; India/Japan out of stock; new **RTX 5090,
+  EU-RO-1, $1.19/hr** (`hxiakjhz6w9hvm`). Watchdog on (30-min idle).
+- Cloned our repo (branch `virtual-tryon-test-app`) on the pod, ran
+  `scripts/gpu_setup.sh`: done in ~12 min (FASHN weights 2.3 GB, CLIP 1.9 GB).
+- Site started with `scripts/gpu_run.sh` on :8000 behind RunPod's HTTPS proxy.
+
+### First real results and fixes
+- **Photo:** 2560×3840 (4K) in ~7–10 s. FASHN call signature confirmed
+  (`person_image, garment_image, category, garment_photo_type, num_samples,
+  num_timesteps, guidance_scale, skip_cfg_last_n_steps, seed, segmentation_free`).
+- Flaw found: skin-coloured blotch on the logo. Two causes:
+  1. colour-difference paste-back mask punched holes where new garment matched
+     the old one → **semantic mask from fashn-human-parser** (old ∪ new garment ∪
+     changed skin − face/hair/hat/glasses/jewellery);
+  2. on-model garment photo sent as "product photo" made FASHN blend the
+     wearer's skin in → **auto-detect garment photo type** with the parser
+     (UI default "Auto-detect"). Verified clean.
+- **Gender estimate:** transformers v5 changed `get_*_features` return type →
+  switched to `logits_per_image`. Person presence now from the human parser
+  (CLIP read plain-background people as "product photo"). Results: person photo
+  → male 99.9%; person on plain background → found, male; product shot → no person.
+- **Pose model on GPU:** FASHN pulled onnxruntime-gpu 1.31 (CUDA 13) vs torch
+  CUDA 12.8 → pinned onnxruntime-gpu 1.22.0 + torch's CUDA libs on
+  LD_LIBRARY_PATH: pose 2.5 ms/frame on GPU; live keyframes 2.6 s → **1.6 s**.
+- End-to-end through the public link (phone-emulated browser): AI estimate,
+  4K photo saved for training, live ~10 fps / ~0.2 s delay (test camera),
+  video download, admin gallery with sessions and videos. No page errors.

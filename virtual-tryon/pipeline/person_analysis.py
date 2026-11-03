@@ -48,17 +48,17 @@ def _load():
             from transformers import CLIPModel, CLIPProcessor
             dev = "cuda" if torch.cuda.is_available() else "cpu"
             dtype = torch.float16 if dev == "cuda" else torch.float32
-            model = CLIPModel.from_pretrained(MODEL_ID, torch_dtype=dtype).to(dev).eval()
+            try:  # newer transformers: dtype=; older: torch_dtype=
+                model = CLIPModel.from_pretrained(MODEL_ID, dtype=dtype)
+            except TypeError:
+                model = CLIPModel.from_pretrained(MODEL_ID, torch_dtype=dtype)
+            model = model.to(dev).eval()
             proc = CLIPProcessor.from_pretrained(MODEL_ID)
             labels, texts = [], []
             for lab, ps in PROMPTS.items():
                 labels += [lab] * len(ps)
                 texts += ps
-            with torch.no_grad():
-                t = proc(text=texts, return_tensors="pt", padding=True).to(dev)
-                emb = model.get_text_features(**t)
-                emb = emb / emb.norm(dim=-1, keepdim=True)
-            _state.update(model=model, proc=proc, dev=dev, dtype=dtype, labels=labels, text=emb)
+            _state.update(model=model, proc=proc, dev=dev, dtype=dtype, labels=labels, texts=texts)
             log.info("CLIP loaded on %s", dev)
     return _state
 
@@ -68,21 +68,21 @@ def analyze(image_bytes: bytes) -> dict:
     import torch
     s = _load()
     img = ImageOps.exif_transpose(Image.open(io.BytesIO(image_bytes))).convert("RGB")
+    # Full forward pass: logits_per_image is stable across transformers versions
+    # (get_*_features changed return type in v5).
     with torch.no_grad():
-        px = s["proc"](images=img, return_tensors="pt")["pixel_values"].to(s["dev"], s["dtype"])
-        e = s["model"].get_image_features(pixel_values=px)
-        e = e / e.norm(dim=-1, keepdim=True)
-        logits = (100.0 * e @ s["text"].T).float().softmax(dim=-1)[0]
+        inp = s["proc"](text=s["texts"], images=img, return_tensors="pt", padding=True)
+        inp = {k: (v.to(s["dev"], s["dtype"]) if v.is_floating_point() else v.to(s["dev"])) for k, v in inp.items()}
+        logits = s["model"](**inp).logits_per_image.float().softmax(dim=-1)[0]
     scores: dict[str, float] = {}
     for lab, p in zip(s["labels"], logits.tolist()):
         scores[lab] = scores.get(lab, 0.0) + p
     person = scores["male"] + scores["female"]
-    if scores["none"] > person:
-        return {"person_found": False, "gender": "unsure", "confidence": 0.0,
-                "scores": {k: round(v, 3) for k, v in scores.items()}}
-    male_share = scores["male"] / person
+    male_share = scores["male"] / max(person, 1e-6)
     gender, conf = ("male", male_share) if male_share >= 0.5 else ("female", 1 - male_share)
     if conf < MIN_CONFIDENCE:
         gender = "unsure"
-    return {"person_found": True, "gender": gender, "confidence": round(conf, 3),
+    # person_found here is CLIP's opinion; the server overrides it with the human
+    # parser when available (CLIP reads plain-background photos as "product").
+    return {"person_found": scores["none"] < person, "gender": gender, "confidence": round(conf, 3),
             "scores": {k: round(v, 3) for k, v in scores.items()}}
