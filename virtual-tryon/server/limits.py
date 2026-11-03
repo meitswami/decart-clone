@@ -65,6 +65,17 @@ def check_and_reserve_session(store_id: str) -> None:
         _save(data)
 
 
+def release_session(store_id: str) -> None:
+    """Undo a reservation when the session never started (e.g. token mint failed)."""
+    with _LOCK:
+        data = _load()
+        store = data["stores"].get(store_id)
+        if store and store["sessions"] > 0:
+            store["sessions"] -= 1
+            data["site_sessions"] = max(0, data["site_sessions"] - 1)
+            _save(data)
+
+
 def record_seconds(store_id: str, seconds: float) -> None:
     """Call when a live session ends, with the actual duration used."""
     seconds = max(0.0, min(float(seconds), settings.max_session_seconds))

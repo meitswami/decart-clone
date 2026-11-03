@@ -5,77 +5,62 @@
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>Try it on</title>
 <style>
-  :root { --bg:#0b0b0c; --fg:#f4f4f5; --accent:#6d5efc; }
-  @media (prefers-color-scheme: light){ :root{ --bg:#fff; --fg:#111; } }
-  body{margin:0;background:var(--bg);color:var(--fg);
-       font:16px/1.5 system-ui,sans-serif;}
+  :root { --bg:#0b0b0c; --fg:#f4f4f5; --muted:#a1a1aa; --accent:#6d5efc; --line:#27272a; --ok:#22c55e; --bad:#f87171; }
+  @media (prefers-color-scheme: light){ :root{ --bg:#fff; --fg:#111; --muted:#52525b; --line:#e4e4e7; --ok:#15803d; --bad:#b91c1c; } }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,sans-serif;}
   .wrap{max-width:760px;margin:0 auto;padding:16px;}
-  video,img{width:100%;border-radius:14px;background:#222;}
-  .row{display:flex;gap:12px;flex-wrap:wrap;margin:12px 0;}
-  button{background:var(--accent);color:#fff;border:0;border-radius:10px;
-         padding:12px 18px;font-size:16px;cursor:pointer;}
-  label.consent{display:flex;gap:8px;align-items:flex-start;font-size:14px;
-                opacity:.9;margin:12px 0;}
-  .hint{opacity:.7;font-size:14px;}
+  .stage{position:relative}
+  video,img{width:100%;border-radius:14px;background:#222;display:block}
+  #out{position:absolute;inset:0;height:100%;object-fit:cover}
+  .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:12px 0;}
+  input[type=text],input[type=password],select{background:transparent;color:var(--fg);border:1px solid var(--line);
+       border-radius:10px;padding:10px 12px;font-size:15px;min-width:0;flex:1}
+  button{background:var(--accent);color:#fff;border:0;border-radius:10px;padding:12px 18px;font-size:16px;cursor:pointer;}
+  button:disabled{opacity:.45;cursor:default}
+  button.ghost{background:transparent;color:var(--fg);border:1px solid var(--line)}
+  label.consent{display:flex;gap:8px;align-items:flex-start;font-size:14px;opacity:.9;margin:12px 0;}
+  .hint{color:var(--muted);font-size:14px;}
+  #status[data-tone=ok]{color:var(--ok)} #status[data-tone=error]{color:var(--bad)}
+  #timer{font-variant-numeric:tabular-nums;color:var(--muted);font-size:14px}
 </style>
 </head>
 <body>
   <div class="wrap">
     <h1 id="brand">Try it on</h1>
     <p class="hint">Stand so your upper body is visible, arms relaxed.</p>
-    <video id="cam" autoplay playsinline muted></video>
+    <div class="stage">
+      <video id="cam" autoplay playsinline muted></video>
+      <video id="out" autoplay playsinline muted hidden></video>
+    </div>
     <div class="row">
       <input type="file" id="garment" accept="image/*"/>
-      <button id="photoBtn">Photo try-on</button>
-      <button id="liveBtn">Live try-on (20s)</button>
+      <select id="category" aria-label="Garment type">
+        <option value="tops">Top</option>
+        <option value="bottoms">Bottom</option>
+        <option value="one-pieces">Dress / one-piece</option>
+      </select>
     </div>
-    <label class="consent">
+    <div class="row">
+      <input type="text" id="desc" placeholder="Describe it (optional), e.g. navy linen shirt" maxlength="200"/>
+    </div>
+    <div class="row" id="code-row" hidden>
+      <input type="password" id="code" placeholder="Access code" autocomplete="off"/>
+    </div>
+    <div class="row">
+      <button id="photoBtn">Photo try-on</button>
+      <button id="liveBtn">Live try-on</button>
+      <button id="stopBtn" class="ghost" disabled>Stop</button>
+      <span id="timer"></span>
+    </div>
+    <label class="consent" id="consent-row">
       <input type="checkbox" id="consent"/>
-      <span>Allow using my try-on video to improve the service. I am 18+.</span>
+      <span>Optional: allow using my try-on video to improve the service. I am 18+.
+        Try-on works either way.</span>
     </label>
-    <img id="result" alt="result" style="display:none"/>
-    <p class="hint" id="status"></p>
+    <img id="result" alt="Try-on result" hidden/>
+    <p class="hint" id="status" role="status"></p>
   </div>
-<script>
-const STORE_ID = new URLSearchParams(location.search).get("store") || "demo";
-const $ = s => document.querySelector(s);
-let stream;
-(async () => {
-  try { stream = await navigator.mediaDevices.getUserMedia({video:true});
-        $("#cam").srcObject = stream; }
-  catch(e){ $("#status").textContent = "Camera blocked: " + e.message; }
-})();
-function snap(){
-  const v=$("#cam"), c=document.createElement("canvas");
-  c.width=v.videoWidth; c.height=v.videoHeight;
-  c.getContext("2d").drawImage(v,0,0);
-  return new Promise(r=>c.toBlob(r,"image/png"));
-}
-$("#photoBtn").onclick = async () => {
-  if(!$("#garment").files[0]){ $("#status").textContent="Pick a garment first."; return; }
-  $("#status").textContent="Working...";
-  const fd=new FormData();
-  fd.append("person", await snap(), "person.png");
-  fd.append("garment", $("#garment").files[0]);
-  fd.append("category","tops");
-  const res=await fetch("/photo/tryon",{method:"POST",body:fd});
-  if(!res.ok){ $("#status").textContent="Error "+res.status; return; }
-  const url=URL.createObjectURL(await res.blob());
-  $("#result").src=url; $("#result").style.display="block"; $("#status").textContent="";
-};
-$("#liveBtn").onclick = async () => {
-  const fd=new FormData();
-  fd.append("store_id",STORE_ID);
-  fd.append("consented",$("#consent").checked);
-  fd.append("is_adult","true");
-  const res=await fetch("/live/token",{method:"POST",body:fd});
-  const data=await res.json();
-  if(!res.ok){ $("#status").textContent=data.detail||("Error "+res.status); return; }
-  $("#status").textContent="Live session ready ("+data.backend+"). TODO: connect WebRTC.";
-  // TODO: connect to data.backend (decart client_token OR local engine_url) over WebRTC,
-  //       cap at data.max_seconds, then POST /live/end with actual seconds used.
-};
-fetch("/health").then(r=>r.json()).then(d=>{$("#brand").textContent=d.brand;});
-</script>
+<script type="module" src="/app.js?v=de9f8f03e9e8"></script>
 </body>
 </html>

@@ -26,6 +26,12 @@ def require_consent(consented: bool, is_adult: bool) -> None:
         raise ConsentError("Recording is not allowed for users under 18.")
 
 
+def should_record(consented: bool, is_adult: bool) -> bool:
+    """Try-on works for everyone; only the *recording* needs opt-in (DPDP Act:
+    consent can't be a condition of the service). Under-18s are never recorded."""
+    return bool(settings.recording_enabled and consented and is_adult)
+
+
 def record_trial(trial_id: str, store_id: str, garment_path: str,
                  camera_clip: bytes | None, meta: dict) -> None:
     """Persist only what we are allowed to: shopper input clip + garment + meta.

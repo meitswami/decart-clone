@@ -34,6 +34,25 @@ data/         Recorded clips (consented) and prepared garments (gitignored)
 ```
 
 ## Quick start
+```bash
+bash scripts/run_local.sh          # serves on :3071 (3070 is the production Node app)
+```
+The demo page's script is bundled from `web/src/app.js`. After editing it, from
+the repo root run `npm install` once, then `node virtual-tryon/web/build.mjs`.
+The built `web/app.js` is committed, so servers need no Node.
+
+### Live session flow (decart backend)
+1. Browser `POST /live/token` (store_id, optional consent). Server checks origin
+   (`PUBLIC_ORIGIN`), optional access code, per-visitor and per-store limits.
+2. Server calls Decart `POST /v1/client/tokens` with the real key and returns a
+   short-lived key locked to `DECART_MODEL`, `PUBLIC_ORIGIN` and
+   `MAX_SESSION_SECONDS`. The real key never leaves the server.
+3. Browser connects the camera over WebRTC with that key, sends the garment.
+4. `POST /live/end` with `session_id`; duration is measured on the server.
+   Sessions never closed are charged the full cap.
+
+Try-on works without the consent box; consent only controls recording.
+
 See `BUILD_HANDOFF.md` for the complete, ordered build + deploy + test plan.
 That file is the single source of truth and is written so a fresh Claude
 session can pick up the work with no other context.
@@ -46,7 +65,7 @@ session can pick up the work with no other context.
 | Consent + recording | working | yes |
 | Photo try-on API wiring | working (needs model download) | model download needs GPU to be useful |
 | Web demo client | working | yes |
-| Decart live backend (white-label) | working (needs key) | yes (proxied) |
+| Decart live backend (white-label) | working: scoped keys minted server-side, browser live client wired (needs `DECART_API_KEY`) | yes |
 | `local` live engine | scaffold + wiring notes | needs GPU |
 | FlashVSR sharpening | scaffold + wiring notes | needs GPU |
 

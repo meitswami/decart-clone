@@ -653,7 +653,7 @@ limits_state.json
     Live = Decart white-labelled. Switch stores to `local` as it matures.
 
 ## 8. Open items a fresh session must resolve
-- [ ] Decart token API exact shape in `/live/token` (read decart docs with a key).
+- [x] Decart token API wired in `/live/token` (`server/decart_tokens.py`, `POST /v1/client/tokens`), browser live client in `web/src/app.js`. Python app now defaults to port 3071 (3070 = production Node app).
 - [ ] Confirm Decart ToS on training from output → decides `RECORD_OUTPUT_FRAMES`.
 - [ ] Pin exact StreamDiffusionV2 + FlashVSR commits after a working run.
 - [ ] Wire FASHN `.tryon()` to its real API from the cloned repo.
