@@ -82,18 +82,17 @@ async function loadSamples() {
   if (!cfg.samples) return;
   try {
     const list = await (await fetch("/garments/catalog.json")).json();
-    // White-label: skip samples with a third-party brand printed on them, and
-    // hats/accessories the photo model doesn't dress.
-    const HIDE = new Set(["crewneck", "cap", "beanie"]);
-    for (const item of list.filter((i) => !HIDE.has(i.id) && ["upper_body", "lower_body", "dresses"].includes(i.type))) {
+    // Only garments the try-on dresses (no hats/accessories).
+    for (const item of list.filter((i) => ["upper_body", "lower_body", "dresses"].includes(i.type))) {
       const b = document.createElement("button");
       b.type = "button";
       b.title = item.name;
+      b.dataset.for = item.for || "all";
       b.setAttribute("aria-pressed", "false");
       const img = document.createElement("img");
       img.alt = item.name;
       img.loading = "lazy";
-      img.src = item.image;
+      img.src = item.thumb || item.image;
       b.append(img);
       b.onclick = async () => {
         document.querySelectorAll("#samples button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
@@ -103,8 +102,20 @@ async function loadSamples() {
       };
       $("#samples").append(b);
     }
+    if (new Set(list.map((i) => i.for).filter(Boolean)).size > 1) $("#sampleFilters").hidden = false;
   } catch {}
 }
+// Men / Women filter. Follows the AI estimate until the shopper picks one.
+let filterPicked = false;
+function setSampleFilter(f) {
+  document.querySelectorAll("#sampleFilters .pill").forEach((p) => p.setAttribute("aria-pressed", String(p.dataset.f === f)));
+  document.querySelectorAll("#samples button").forEach((b) => {
+    b.hidden = !(f === "all" || !b.dataset.for || b.dataset.for === "all" || b.dataset.for === f);
+  });
+}
+document.querySelectorAll("#sampleFilters .pill").forEach((p) => {
+  p.onclick = () => { filterPicked = true; setSampleFilter(p.dataset.f); };
+});
 
 // ---------- person ----------
 async function setPerson(blob, source) {
@@ -129,7 +140,10 @@ async function analyzePerson(blob) {
     state.gender = r;
     if (!r.person_found) $("#genderText").textContent = "no person found. Try another photo";
     else if (r.gender === "unsure") $("#genderText").textContent = "not sure";
-    else $("#genderText").textContent = `${r.gender === "female" ? "Female" : "Male"} · ${Math.round(r.confidence * 100)}%`;
+    else {
+      $("#genderText").textContent = `${r.gender === "female" ? "Female" : "Male"} · ${Math.round(r.confidence * 100)}%`;
+      if (!filterPicked && r.confidence >= 0.8) setSampleFilter(r.gender === "female" ? "women" : "men");
+    }
   } catch {
     $("#genderText").textContent = "unavailable";
   }

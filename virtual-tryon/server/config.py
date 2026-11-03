@@ -38,6 +38,11 @@ class Settings(BaseSettings):
     # "ws" = frames over a WebSocket on the page's own origin (works through
     # RunPod's HTTPS proxy and on mobile data); "webrtc" = webrtc/live_server.py.
     live_transport: str = "ws"
+    # Default live engine. "gpu" = our engine: only the garment area is repainted on
+    # the real camera picture, so the person and background stay exactly as they are.
+    # "hosted" = the hosted live engine (instant start, but it redraws the whole frame).
+    # Visitors can still pick one with ?engine=gpu or ?engine=hosted.
+    live_default_engine: str = "gpu"
     engine_max_sessions: int = 2
     live_key_interval: float = 1.0
     keepalive_file: str = "/workspace/.keepalive"

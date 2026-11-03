@@ -44,8 +44,13 @@ How the GPU part works:
 - Safety: the box stops itself after 15 idle minutes; the site also stops it if
   it runs 25 min with no try-on, or never becomes healthy; a failed wake stops it.
 - Limits: 6 wakes per visitor per hour, 200 per day (`/etc/live-virtual-try-on-v2.env`).
-- Live try-on uses the hosted live engine by default (instant). Add `?engine=gpu`
-  to the page address to use our own GPU engine.
+- Live try-on uses our own GPU engine by default: only the garment area is
+  repainted on the real camera picture, so the person and background never
+  change. `?engine=hosted` on the page address switches to the hosted live
+  engine (instant start, but it redraws the whole frame); set
+  `LIVE_DEFAULT_ENGINE=hosted` in the settings file to make that the default.
+- The garment collection lives in `virtual-tryon/web/garments/` (`catalog.json`
+  plus images and thumbnails; `for` = men / women drives the filter).
 
 ## Run the live site locally
 
