@@ -12,6 +12,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 . /workspace/venv/bin/activate
 : "${ENGINE_SECRET:?set ENGINE_SECRET}" "${ADMIN_TOKEN:?set ADMIN_TOKEN}"
+# CUDA 12 libraries that ship with torch, so onnxruntime (pose model) finds them.
+export LD_LIBRARY_PATH="$(ls -d /usr/local/lib/python3*/dist-packages/nvidia/*/lib 2>/dev/null | tr '\n' ':')${LD_LIBRARY_PATH:-}"
 export FASHN_WEIGHTS_DIR=/workspace/vto/models/fashn-vton-1.5/weights
 export ESRGAN_WEIGHTS=/workspace/vto/models/RealESRGAN_x4plus.pth
 export HF_HOME=/workspace/hf KEEPALIVE_FILE=/workspace/.keepalive

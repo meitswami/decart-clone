@@ -310,7 +310,7 @@ async function connectWs(data) {
   live = s;
 
   const sendFrame = () => {
-    if (live !== s || ws.readyState !== 1 || s.inflight >= 2 || !src.videoWidth) return;
+    if (live !== s || ws.readyState !== 1 || s.inflight >= 3 || !src.videoWidth) return;
     cap.width = w;
     cap.height = Math.round((src.videoHeight / src.videoWidth) * w);
     cctx.drawImage(src, 0, 0, cap.width, cap.height);
